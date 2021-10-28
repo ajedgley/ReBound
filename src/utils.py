@@ -25,14 +25,6 @@ def create_lct_directory(path, name):
         print(error)
         sys.exit(1)
 
-def main():
-    create_lct_directory("c:\\Users\\aasth\\Desktop\\Aastha\\College\\CMSC435", 'test')
-
-# Using the special variable 
-# __name__
-if __name__=="__main__":
-    main()
-
 def create_rgb_sensor_directory(path, name, images, translation, rotation, intrinsic):
     """Adds one RGB sensor directory inside camera directory
     Args:
