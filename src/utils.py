@@ -143,7 +143,7 @@ def add_lidar_frame_from_pcd(path, name, frame, input_path):
     copyfile(input_path, full_path)
 
 
-def create_frame_bounding_directory(path, name, frame_num, origin_list, size_list, rotation):
+def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
     """Adds box data for one frame
     Args:
         path: path to LCT directory
@@ -270,5 +270,5 @@ def check_inside_cameras(path):
 #Will print out reason for invalidity if one exists
 def check_inside_pointcloud(path):
     print()
-    return true
+    return True
 
