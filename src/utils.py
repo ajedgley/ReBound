@@ -1,5 +1,6 @@
 import os
 import sys
+from shutil import copyfile
 #Licensing
 
 #Utils for creating LCT Directory
@@ -96,14 +97,57 @@ def create_lidar_sensor_directory(path, name, images, translation, rotation):
     Args:
         path: path to LCT directory
         name: name of lidar sensor
-        images: [n, 3] list representing x,y,z coordinates (assumed that length of list is also number of frames)
+        points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
         translation: (x,y,z) tuple representing sensor translation
         rotation: (w,x,y,z) quaternion representing sensor rotation
     Returns:
         None
         """
 
-def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
+    # see .pcd file format documentation at https://pointclouds.org/documentation/tutorials/pcd_file_format.html
+    pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z',
+                'SIZE 4 4 4', 'TYPE F F F', 'COUNT 1 1 1']
+    pcd_lines.append('WIDTH ' + str(len(points)))
+    pcd_lines.append('HEIGHT 1')
+    pcd_lines.append('VIEWPOINT ' + ' '.join([str(i) for i in translation + rotation]))
+    pcd_lines.append('POINTS ' + str(len(points)))
+    pcd_lines.append('DATA ascii')
+    for point in points:
+        pcd_lines.append(' '.join([str(i) for i in point]))
+    
+    pcd_str = '\n'.join(pcd_lines)
+
+    full_path = os.path.join(path, name)
+
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+    
+    full_path = os.path.join(full_path, str(frame) + '.pcd')
+    f = open(full_path, 'w')
+    f.write(pcd_str)
+    f.close()
+
+def create_lidar_from_pcd(path, name, frame, input_path):
+    """Copies one .pcd file to pointcloud directory
+    Args:
+        path: path to LCT directory
+        name: name of lidar sensor
+        input_path: path to .pcd file
+    Returns:
+        None
+        """
+    
+    full_path = os.path.join(path, name)
+
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+    
+    full_path = os.path.join(full_path, str(frame) + '.pcd')
+
+    copyfile(input_path, full_path)
+
+
+def create_frame_bounding_directory(path, name, frame_num, origin_list, size_list, rotation):
     """Adds box data for one frame
     Args:
         path: path to LCT directory
