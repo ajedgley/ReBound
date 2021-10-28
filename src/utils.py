@@ -85,21 +85,18 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
     with open(description_path, 'w') as f:
         json.dump(description, f)
 
-    #Loop that creates JSON file that stores each frame
-    for i in range(0, len(origins)):
-        json_name = str(i) + '.json'
-        json_path = os.path.join(full_path, json_name)
-        box_data = {}
-        box_data['origins'] = origins
-        box_data['sizes'] = sizes
-        box_data['rotations'] = rotations
-        box_data['annotations'] = annotation_names
-        box_data['confidences'] = confidences
+    #Creates JSON file that stores all the boxes in a frame
+    
+    json_name = 'boxes' + '.json'
+    json_path = os.path.join(full_path, json_name)
+    box_data = {}
+    box_data['origins'] = origins
+    box_data['sizes'] = sizes
+    box_data['rotations'] = rotations
+    box_data['annotations'] = annotation_names
+    box_data['confidences'] = confidences
     with open(json_path, 'w') as f:
         json.dump(box_data, f)
-
-    
-
 
 def create_ego_directory(path, frame, translation, rotation):
     """Adds ego data for one frame
@@ -111,8 +108,17 @@ def create_ego_directory(path, frame, translation, rotation):
     Returns:
         None
         """
-    #Create directory that stores information 
-        
+    #Join path to ego dir
+    full_path = os.path.join(path, 'ego')
+
+    #Add json file for frame number
+    json_path = os.path.join(full_path, str(frame) + '.json')
+    ego_data = {}
+    ego_data['translation'] = translation
+    ego_data['rotation'] = rotation
+    with open(json_path, 'w') as f:
+        json.dump(ego_data, f)
+
 
 
 def is_lct_directory(path):
