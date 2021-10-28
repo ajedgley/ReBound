@@ -89,7 +89,15 @@ def add_rgb_frame(path, name, image, frame):
     str(frame) +".jpg"))
 
 
-def create_lidar(path, name, frame, points, translation, rotation):
+def create_lidar_sensor_directory(path, name):
+    full_path = os.path.join(path, 'pointcloud', name)
+
+    try:
+        os.makedirs(full_path)
+    except FileExistsError:
+        pass
+
+def add_lidar_frame(path, name, frame, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
@@ -114,17 +122,13 @@ def create_lidar(path, name, frame, points, translation, rotation):
     
     pcd_str = '\n'.join(pcd_lines)
 
-    full_path = os.path.join(path, name)
-
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
+    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
     
-    full_path = os.path.join(full_path, str(frame) + '.pcd')
     f = open(full_path, 'w')
     f.write(pcd_str)
     f.close()
 
-def create_lidar_from_pcd(path, name, frame, input_path):
+def add_lidar_frame_from_pcd(path, name, frame, input_path):
     """Copies one .pcd file to pointcloud directory
     Args:
         path: path to LCT directory
@@ -134,15 +138,9 @@ def create_lidar_from_pcd(path, name, frame, input_path):
         None
         """
     
-    full_path = os.path.join(path, name)
-
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
-    
-    full_path = os.path.join(full_path, str(frame) + '.pcd')
+    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
 
     copyfile(input_path, full_path)
-
 
 def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
     """Adds box data for one frame
