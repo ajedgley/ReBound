@@ -1,3 +1,5 @@
+import os
+import sys
 #Licensing
 
 #Utils for creating LCT Directory
@@ -7,11 +9,29 @@ def create_lct_directory(path, name):
     """Create LCT directory at specified path
     Args:
         path: target path where directory will be stored
-        name: name of root directory
     
     Returns:
         None
     """
+    sub_directories = ['cameras', 'pointcloud', 'bounding', 'ego']
+    try:
+        parent_path = os.path.join(path, name)
+        os.makedirs(parent_path)
+        print("added new folder")
+        for directory in sub_directories:
+            full_path = os.path.join(parent_path, directory)
+            os.mkdir(full_path)
+    except OSError as error:
+        print(error)
+        sys.exit(1)
+
+def main():
+    create_lct_directory("c:\\Users\\aasth\\Desktop\\Aastha\\College\\CMSC435", 'test')
+
+# Using the special variable 
+# __name__
+if __name__=="__main__":
+    main()
 
 def create_rgb_sensor_directory(path, name, images, translation, rotation, intrinsic):
     """Adds one RGB sensor directory inside camera directory
