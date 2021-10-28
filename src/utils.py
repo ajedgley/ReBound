@@ -1,5 +1,6 @@
 import os
 import sys
+from shutil import copyfile
 #Licensing
 
 #Utils for creating LCT Directory
@@ -60,6 +61,27 @@ def create_lidar(path, name, frame, points, translation, rotation):
     f = open(full_path, "x")
     f.write(pcd_str)
     f.close()
+
+def create_lidar_from_pcd(path, name, frame, input_path):
+    """Adds one lidar sensor directory inside pointcloud directory
+    Args:
+        path: path to LCT directory
+        name: name of lidar sensor
+        input_path: path to .pcd file
+    Returns:
+        None
+        """
+    
+    full_path = os.path.join(path, name)
+
+    #This should probably be somewhere else
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+    
+    full_path = os.path.join(full_path, str(frame) + '.pcd')
+
+    copyfile(input_path, full_path)
+
 
 def create_frame_bounding_directory(path, name, frame_num, origin_list, size_list, rotation):
     """Adds box data for one frame
