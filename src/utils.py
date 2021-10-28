@@ -2,6 +2,10 @@
 
 #Utils for creating LCT Directory
 
+import os
+import json
+import PIL
+
 #Creates top level lct directory structure at "path"
 def create_lct_directory(path, name):
     """Create LCT directory at specified path
@@ -25,6 +29,40 @@ def create_rgb_sensor_directory(path, name, images, translation, rotation, intri
     Returns:
         None
         """
+    if(path[-1] in "\\/"):
+        path = path[:-1]
+
+    try:
+        os.mkdir(os.path.join(path, "Cameras"))
+    except FileExistsError:
+        print("Path exists")
+    
+    work_dir = os.path.join(os.path.join(path, "Cameras"), name)
+    try:
+        os.mkdir(work_dir)
+    except FileExistsError:
+        print("Camera exists")
+
+
+    extrinsics = {}
+    extrinsics['translation'] = translation
+    extrinsics['rotation'] = rotation
+
+
+    extrinsic_file = open(work_dir + "/Extrinsics.json", "w")
+    extrinsic_file.write(json.dumps(extrinsics))
+    extrinsic_file.close()
+
+    intrinsic_file = open(work_dir + "/Intrinsics.json", "w")
+    intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
+    intrinsic_file.close()
+
+    i = 0
+    for image in images:
+        image.save(os.path.join(work_dir, str(i) +".jpg"))    
+        i += 1
+
+
 def create_lidar_sensor_directory(path, name, images, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
@@ -57,3 +95,41 @@ def is_lct_directory(path):
     Returns:
         Boolean: True or False
     """
+
+def import_waymo_debug(filepath):
+    import tensorflow as tf
+    from waymo_open_dataset import dataset_pb2 as open_dataset
+    import io
+
+    dataset = tf.data.TFRecordDataset(os.path.join(filepath,"training0.tfrecord"),'')
+
+    rgb = True
+    for data in dataset:
+            frame = open_dataset.Frame()
+            frame.ParseFromString(bytearray(data.numpy()))
+            break
+
+    if rgb:
+        #We wrap the raw jpg data using BytesIO to avoid saving a temporary file using BytesIO
+        #Then we give the function pointer created by bytesIo to PIL to open it in a standard format
+        image = PIL.Image.open(io.BytesIO(frame.images[0].image))
+        #convert the  PIL image object to a numpy array using asarray(), since that is what open3d expects
+        #image = o3d.geometry.Image(np.asarray(image))
+    
+    return image
+
+if (__name__ == "__main__"):
+
+    import shutil
+
+    dir_path = "/home/mbetberg/Documents/cmsc435_start/lidar-data"
+
+    img = import_waymo_debug(dir_path)
+
+    try:
+        shutil.rmtree(dir_path + "Cameras")
+    except OSError as e:
+        pass
+
+    create_rgb_sensor_directory(dir_path, "Camera1", [img, img], (1, 2, 3),
+    (1, 2, 3, 4), [[1, 2, 3], [4, 5, 6], [7, 8, 9]])
