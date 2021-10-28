@@ -87,7 +87,7 @@ def add_rgb_frame(path, name, image, frame):
     str(frame) +".jpg"))
 
 
-def create_lidar_sensor_directory(path, name, images, translation, rotation):
+def create_lidar(path, name, frame, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
