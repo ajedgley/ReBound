@@ -1,11 +1,16 @@
 #Licensing
 
+#imports
+import os.path
+import os
+
 #Utils for creating LCT Directory
 import os
 import sys
 import json
 import PIL
 from shutil import copyfile
+
 
 #Creates top level lct directory structure at "path"
 def create_lct_directory(path, name):
@@ -220,33 +225,65 @@ def is_lct_directory(path):
         Boolean: True or False
     """
 
-def import_waymo_debug(filepath):
-    import tensorflow as tf
-    from waymo_open_dataset import dataset_pb2 as open_dataset
-    import io
+    #individual verification bools
+    cameras_exist = os.path.exists(os.path.join(path, "cameras"))
+    inside_cameras_valid = check_inside_cameras(os.path.join(path, "cameras"))
+    pointcloud_exists = os.path.exists(os.path.join(path, "pointcloud"))
+    inside_pointcloud_valid = check_inside_pointcloud(os.path.join(path, "pointcloud"))
+    bounding_exists = os.path.exists(os.path.join(path, "bounding"))
+    ego_exists = os.path.exists(os.path.join(path, "ego"))
 
-    dataset = tf.data.TFRecordDataset(os.path.join(filepath,"training0.tfrecord"),'')
+    #overall verification bool
+    is_verified = True
 
-
-    rgb = True
-    image_arr = []
-    i = 3
-    for data in dataset:
-            i -= 1
-            frame = open_dataset.Frame()
-            frame.ParseFromString(bytearray(data.numpy()))
-            image = PIL.Image.open(io.BytesIO(frame.images[0].image))
-            image_arr.append(image)
-            if(not(i)):
-                break
-
-    if rgb:
-        #We wrap the raw jpg data using BytesIO to avoid saving a temporary file using BytesIO
-        #Then we give the function pointer created by bytesIo to PIL to open it in a standard format
-        image = PIL.Image.open(io.BytesIO(frame.images[0].image))
-        #convert the  PIL image object to a numpy array using asarray(), since that is what open3d expects
-        #image = o3d.geometry.Image(np.asarray(image))
+    #provides feedback to the user
+    if not cameras_exist:
+        print("There is no directory named \"cameras\" at the selected path.\n")
+        is_verified = False
+    if not inside_cameras_valid:
+        is_verified = False
+    if not pointcloud_exists:
+        print("There is no directory named \"pointcloud\" at the selected path. \n")
+        is_verified = False
+    if not inside_pointcloud_valid:
+        is_verified = False
+    if not bounding_exists:
+        print("There is no directory named \"bounding\" at the selected path. \n")
+        is_verified = False
+    if not ego_exists:
+        print("There is no directory named \"ego\" at the selected path. \n")
+        is_verified = False
     
-    return image_arr
+    return is_verified
 
 
+#TODO implement
+#Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
+#Parameter is the path to the cameras dir
+#Returns false if not valid and true otherwise
+#Will print out reason for invalidity if one exists
+def check_inside_cameras(path):
+    for dir in os.listdir(path):
+        print()
+    
+    return True
+
+#TODO implement
+#Checks to make sure that all the subdirectories of cameras only have .pcd files
+#Returns false if not valid and true otherwise
+#Will print out reason for invalidity if one exists
+def check_inside_pointcloud(path):
+    print()
+    return true
+
+
+def main():
+    answer = is_lct_directory("/home/avetter/Desktop/Dev/lidar/src")
+
+    if answer:
+        print("it works")
+    else:
+        print("doesnt work")
+
+if __name__ == "__main__":
+    main()
