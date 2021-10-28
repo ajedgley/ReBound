@@ -271,5 +271,5 @@ def check_inside_cameras(path):
 #Will print out reason for invalidity if one exists
 def check_inside_pointcloud(path):
     print()
-    return true
+    return True
 
