@@ -1,3 +1,5 @@
+import os
+import sys
 #Licensing
 
 #Utils for creating LCT Directory
@@ -25,17 +27,39 @@ def create_rgb_sensor_directory(path, name, images, translation, rotation, intri
     Returns:
         None
         """
-def create_lidar_sensor_directory(path, name, images, translation, rotation):
+def create_lidar(path, name, frame, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
-        images: [n, 3] list representing x,y,z coordinates (assumed that length of list is also number of frames)
+        points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
         translation: (x,y,z) tuple representing sensor translation
         rotation: (w,x,y,z) quaternion representing sensor rotation
     Returns:
         None
         """
+    pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z'
+                'SIZE 4 4 4', 'TYPE F F F', 'COUNT 1 1 1']
+    pcd_lines.append('WIDTH ' + str(len(points)))
+    pcd_lines.append('HEIGHT 1')
+    pcd_lines.append('VIEWPOINT ' + ' '.join([str(i) for i in translation + rotation]))
+    pcd_lines.append('POINTS ' + str(len(points)))
+    pcd_lines.append('DATA ascii')
+    for point in points:
+        pcd_lines.append(' '.join([str(i) for i in point]))
+    
+    pcd_str = '\n'.join(pcd_lines)
+
+    full_path = os.path.join(path, name)
+
+    #This should probably be somewhere else
+    if not os.path.exists(full_path):
+        os.makedirs(full_path)
+    
+    full_path = os.path.join(full_path, str(frame) + '.pcd')
+    f = open(full_path, "x")
+    f.write(pcd_str)
+    f.close()
 
 def create_frame_bounding_directory(path, name, frame_num, origin_list, size_list, rotation):
     """Adds box data for one frame
