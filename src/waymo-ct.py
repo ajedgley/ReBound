@@ -40,4 +40,7 @@ if __name__ == "__main__":
         print("The file specified is not a tfrecord")
         sys.exit(2)
 
-    create_lct_directory(os.getcwd(), folder_name)
+    if len(custom_path) != 0:
+        create_lct_directory(os.getcwd().join(custom_path), folder_name)
+    else:
+        create_lct_directory(os.getcwd(), folder_name)
