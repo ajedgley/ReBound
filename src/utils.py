@@ -39,7 +39,9 @@ def create_lidar(path, name, frame, points, translation, rotation):
     Returns:
         None
         """
-    pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z'
+
+    # see .pcd file format documentation at https://pointclouds.org/documentation/tutorials/pcd_file_format.html
+    pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z',
                 'SIZE 4 4 4', 'TYPE F F F', 'COUNT 1 1 1']
     pcd_lines.append('WIDTH ' + str(len(points)))
     pcd_lines.append('HEIGHT 1')
@@ -53,17 +55,16 @@ def create_lidar(path, name, frame, points, translation, rotation):
 
     full_path = os.path.join(path, name)
 
-    #This should probably be somewhere else
     if not os.path.exists(full_path):
         os.makedirs(full_path)
     
     full_path = os.path.join(full_path, str(frame) + '.pcd')
-    f = open(full_path, "x")
+    f = open(full_path, 'w')
     f.write(pcd_str)
     f.close()
 
 def create_lidar_from_pcd(path, name, frame, input_path):
-    """Adds one lidar sensor directory inside pointcloud directory
+    """Copies one .pcd file to pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
@@ -74,7 +75,6 @@ def create_lidar_from_pcd(path, name, frame, input_path):
     
     full_path = os.path.join(path, name)
 
-    #This should probably be somewhere else
     if not os.path.exists(full_path):
         os.makedirs(full_path)
     
