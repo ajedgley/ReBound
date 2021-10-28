@@ -1,16 +1,11 @@
-import os
-import sys
-from shutil import copyfile
 #Licensing
 
 #Utils for creating LCT Directory
 import os
 import sys
 import json
-
-import os
-import json
 import PIL
+from shutil import copyfile
 
 #Creates top level lct directory structure at "path"
 def create_lct_directory(path, name):
@@ -254,24 +249,4 @@ def import_waymo_debug(filepath):
     
     return image_arr
 
-if (__name__ == "__main__"):
-
-    import shutil
-
-    dir_path = "/home/mbetberg/Documents/cmsc435_start/lidar-data"
-
-    img = import_waymo_debug(dir_path)
-
-    try:
-        shutil.rmtree(dir_path + "Cameras")
-    except OSError as e:
-        pass
-
-    create_rgb_sensor_directory(dir_path, "Camera1", (1, 2, 3),
-    (1, 2, 3, 4), [[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-
-    fram = 0
-    for i in img:
-        add_rgb_frame(dir_path, "Camera1", i, fram)
-        fram += 2
 
