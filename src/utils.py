@@ -1,8 +1,5 @@
 #Licensing
 
-#imports
-import os.path
-import os
 
 #Utils for creating LCT Directory
 import os
@@ -276,14 +273,3 @@ def check_inside_pointcloud(path):
     print()
     return true
 
-
-def main():
-    answer = is_lct_directory("/home/avetter/Desktop/Dev/lidar/src")
-
-    if answer:
-        print("it works")
-    else:
-        print("doesnt work")
-
-if __name__ == "__main__":
-    main()
