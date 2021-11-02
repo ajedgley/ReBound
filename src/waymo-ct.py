@@ -3,6 +3,9 @@ import sys
 import getopt
 import os
 from utils import create_lct_directory
+from waymo_open_dataset.utils import frame_utils
+import tensorflow as tf
+from waymo_open_dataset import dataset_pb2 as open_dataset
 
 #Get command line options
 def parse_options():
@@ -44,3 +47,14 @@ if __name__ == "__main__":
         create_lct_directory(os.getcwd().join(custom_path), folder_name)
     else:
         create_lct_directory(os.getcwd(), folder_name)
+
+    #Extract data from TFRecord File
+    dataset = tf.data.TFRecordDataset(waymo_path,'')
+
+    #Loop through each frame
+    for data in dataset:
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+        #At this point have one frame imported as 'frame'
+        
+    
