@@ -142,7 +142,6 @@ def add_lidar_frame_from_pcd(path, name, frame, input_path):
 
     copyfile(input_path, full_path)
 
-
 def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
     """Adds box data for one frame
     Args:
