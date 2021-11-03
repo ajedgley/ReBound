@@ -2,7 +2,7 @@
 import sys
 import getopt
 import os
-from utils import create_lct_directory
+from utils import create_frame_bounding_directory, create_lct_directory
 from waymo_open_dataset.utils import frame_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
@@ -35,6 +35,20 @@ def parse_options():
 
     return (waymo_path, folder_name, custom_path)
 
+def extract_bounding(frame, frame_num, lct_path):
+    origins = []
+    sizes = []
+    rotations = []
+    annotation_names = []
+    annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
+    confidences = []
+    for label in frame.laser_labels:
+        origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
+        sizes.append([label.box.width, label.box.length, label.box.height])
+        annotation_names.append(annotation_dict[label.type])
+        rotations.append([0,0,0,0])
+        confidences.append(100)
+    create_frame_bounding_directory(folder_name, frame_num, origins, sizes,rotations,annotation_names,confidences)
 if __name__ == "__main__":
     (waymo_path, folder_name, custom_path) = parse_options()
 
@@ -52,9 +66,13 @@ if __name__ == "__main__":
     dataset = tf.data.TFRecordDataset(waymo_path,'')
 
     #Loop through each frame
+    counter = 0
     for data in dataset:
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
         #At this point have one frame imported as 'frame'
+        extract_bounding(frame,counter,folder_name)
+        counter += 1
         
+
     
