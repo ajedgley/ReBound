@@ -89,7 +89,6 @@ if __name__ == "__main__":
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0
     while sample['next'] != '':
-        #CALL FUNCTIONS HERE. the variable 'scene' is the frame
-        
+        #CALL FUNCTIONS HERE. the variable 'sample' is the frame
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
