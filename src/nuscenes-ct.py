@@ -8,6 +8,8 @@ import getopt
 import sys
 import os
 
+import utils
+
 from nuscenes.nuscenes import NuScenes
 
 from nuscenes.utils.data_classes import LidarPointCloud
@@ -15,7 +17,6 @@ from nuscenes.utils.data_classes import Quaternion
 
 from utils import create_lct_directory
 
-from nuscenes.nuscenes import NuScenes
 
 
 # Parse CLI args and validate input
@@ -23,7 +24,7 @@ def parse_options():
 
     input_path = ""
     output_path = ""
-    
+    scene_name = ""
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
     try:
@@ -64,6 +65,23 @@ def validate_io_paths(input_path, output_path):
     # Output directory path is validated in utils.create_lct_directory()
     create_lct_directory(os.getcwd(), output_path)
 
+def extract_bounding(sample, frame_num, target_path):
+    origins = []
+    sizes = []
+    rotations = []
+    annotation_names = []
+    confidences = []
+    
+    for i in range(0, len(sample['anns']) - 1):
+        token = sample['anns'][i]
+        annotation_metadata = nusc.get('sample_annotation', token)
+        origins.append(annotation_metadata['translation'])
+        sizes.append(annotation_metadata['size'])
+        rotations.append(annotation_metadata['rotation'])
+        annotation_names.append(annotation_metadata['category_name'])
+        confidences.append(100)
+        
+    utils.create_frame_bounding_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
 
@@ -90,5 +108,7 @@ if __name__ == "__main__":
     frame_num = 0
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
+        extract_bounding(sample, frame_num, output_path)
+
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
