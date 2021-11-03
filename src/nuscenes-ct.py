@@ -7,6 +7,7 @@ Conversion tool to bring nuscenes dataset into LVT.
 import getopt
 import sys
 import os
+from lidar.src.utils import create_ego_directory
 
 from nuscenes.nuscenes import NuScenes
 
@@ -23,6 +24,7 @@ def parse_options():
 
     input_path = ""
     output_path = ""
+    parse_options = ""
     
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
@@ -64,6 +66,12 @@ def validate_io_paths(input_path, output_path):
     # Output directory path is validated in utils.create_lct_directory()
     create_lct_directory(os.getcwd(), output_path)
 
+def extract_ego(nusc, sample, frame_num, output_path):
+    poserecord = nusc.get('ego_pose', sample['ego_pose_token'])
+
+    full_path = os.path.join(os.getcwd(), output_path)
+    create_ego_directory(full_path, frame_num, poserecord['translation'], poserecord['rotation'])
+
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
 
@@ -90,5 +98,8 @@ if __name__ == "__main__":
     frame_num = 0
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
+        extract_ego(nusc, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
+
+    
