@@ -13,7 +13,7 @@ from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import LidarPointCloud
 from nuscenes.utils.data_classes import Quaternion
 
-from utils import create_lct_directory
+from utils import *
 
 from nuscenes.nuscenes import NuScenes
 
@@ -23,6 +23,7 @@ def parse_options():
 
     input_path = ""
     output_path = ""
+    scene_name = ""
     
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
@@ -88,6 +89,13 @@ if __name__ == "__main__":
     scene = nusc.get('scene', scene_token)
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0
+
+    # Populate the generated directories with the appropriate data
+
+    create_lidar_sensor_directory(output_path, "LIDAR_TOP")
+    (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data']["LIDAR_TOP"])
+    points = LidarPointCloud.from_file(path)
+
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'scene' is the frame
         
