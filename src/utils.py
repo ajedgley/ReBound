@@ -85,7 +85,7 @@ def add_rgb_frame(path, name, image, frame):
         """
 
     #Assumes directory exists
-    image.save(os.path.join(os.path.join(os.path.join(path, "Cameras"), name),
+    image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
     str(frame) +".jpg"))
 
 def add_rgb_frame_from_jpg(path, name, frame, input_path):

@@ -7,6 +7,7 @@ Conversion tool to bring nuscenes dataset into LVT.
 import getopt
 import sys
 import os
+import utils
 
 import utils
 
@@ -17,7 +18,7 @@ from nuscenes.utils.data_classes import Quaternion
 
 from utils import create_lct_directory
 
-
+import numpy as np
 
 # Parse CLI args and validate input
 def parse_options():
@@ -25,6 +26,8 @@ def parse_options():
     input_path = ""
     output_path = ""
     scene_name = ""
+    parse_options = ""
+    
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
     try:
@@ -64,6 +67,13 @@ def validate_io_paths(input_path, output_path):
 
     # Output directory path is validated in utils.create_lct_directory()
     create_lct_directory(os.getcwd(), output_path)
+
+def extract_ego(nusc, sample, frame_num, output_path):
+    sensor = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
+    poserecord = nusc.get('ego_pose', sensor['ego_pose_token'])
+
+    full_path = os.path.join(os.getcwd(), output_path)
+    utils.create_ego_directory(full_path, frame_num, poserecord['translation'], poserecord['rotation'])
 
 def extract_bounding(sample, frame_num, target_path):
     origins = []
@@ -127,7 +137,10 @@ if __name__ == "__main__":
 
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
+        extract_ego(nusc, sample, frame_num, output_path)
         extract_bounding(sample, frame_num, output_path)
         extract_rgb(sample, nusc, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
+
+    
