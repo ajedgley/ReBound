@@ -88,6 +88,18 @@ def add_rgb_frame(path, name, image, frame):
     image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
     str(frame) +".jpg"))
 
+def add_rgb_frame_from_jpg(path, name, frame, input_path):
+    """Copies existing jpg file into the cameras directory
+    Args:
+        path: path to LCT directory
+        name: name of RGB sensor
+        frame: the number corresponding to the frame
+        input_path: Path to source jpg iamge
+    Returns:
+        None
+        """
+    full_path = os.path.join(path, 'cameras', name, str(frame) + '.jpg')
+    copyfile(input_path, full_path)
 
 def create_lidar_sensor_directory(path, name):
     full_path = os.path.join(path, 'pointcloud', name)

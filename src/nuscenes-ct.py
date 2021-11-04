@@ -93,35 +93,21 @@ def extract_bounding(sample, frame_num, target_path):
         
     utils.create_frame_bounding_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
-def extract_lidar(nusc, sample, frame_num, target_path):
-    """Used to extract the LIDAR pointcloud information from the nuScenes dataset
-    Args:
-        nusc: NuScenes api object for getting info related to LiDAR data
-        sample: All the sensor information
-        frame_num: Frame number
-        target_path: Output directory path where data will be written to
-    """
+
+def extract_rgb(sample, nusc, frame_num, target_path):
+    camera_list = ["CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"]
+    #For each camera sensor
+    for camera in camera_list:
+        (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data'][camera])
+        utils.add_rgb_frame_from_jpg(target_path, camera, frame_num, path)
+        
     
-    # We'll need to get all the information we need to pass to utils.add_lidar_frame()
-    # Get the points, translation, and rotation info using our nusc input
-    sensor = nusc.get('sample_data', sample['data']["LIDAR_TOP"])
-    cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
-    (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data']["LIDAR_TOP"])
-    points = LidarPointCloud.from_file(path)
-    translation = cs_record['translation']
-    rotation = cs_record['rotation']
-
-    # Reshape points
-    points = np.transpose(points.points[:3, :])
-
-    utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
-
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
 
     # Read in input database and output directory paths
     (input_path, output_path, scene_name) = parse_options()
-
+    
     # Debug print statement to check that they were read in correctly
     # print(input_path, output_path)
 
@@ -141,16 +127,19 @@ if __name__ == "__main__":
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0
 
-    # Populate the generated directories with the appropriate data
+    #Set up Camera Directories
+    camera_list = ["CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"]
+    for camera in camera_list:
+        sensor = nusc.get('sample_data', sample['data'][camera])
+        cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
+        utils.create_rgb_sensor_directory(output_path, camera, cs_record['translation'], cs_record['rotation'], cs_record['camera_intrinsic'])
 
-    utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
-    
+
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
         extract_ego(nusc, sample, frame_num, output_path)
         extract_bounding(sample, frame_num, output_path)
-        extract_lidar(nusc, sample, frame_num, output_path)
-
+        extract_rgb(sample, nusc, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
 
