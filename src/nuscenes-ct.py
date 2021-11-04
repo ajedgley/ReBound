@@ -82,12 +82,22 @@ def extract_bounding(sample, frame_num, target_path):
         confidences.append(100)
         
     utils.create_frame_bounding_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+
+
+def extract_rgb(sample, nusc, frame_num, target_path):
+    camera_list = ["CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"]
+    #For each camera sensor
+    for camera in camera_list:
+        (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data'][camera])
+        utils.add_rgb_frame_from_jpg(target_path, camera, frame_num, path)
+        
+    
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
 
     # Read in input database and output directory paths
     (input_path, output_path, scene_name) = parse_options()
-
+    
     # Debug print statement to check that they were read in correctly
     # print(input_path, output_path)
 
@@ -106,9 +116,18 @@ if __name__ == "__main__":
     scene = nusc.get('scene', scene_token)
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0
+
+    #Set up Camera Directories
+    camera_list = ["CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"]
+    for camera in camera_list:
+        sensor = nusc.get('sample_data', sample['data'][camera])
+        cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
+        utils.create_rgb_sensor_directory(output_path, camera, cs_record['translation'], cs_record['rotation'], cs_record['camera_intrinsic'])
+
+
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
         extract_bounding(sample, frame_num, output_path)
-
+        extract_rgb(sample, nusc, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
