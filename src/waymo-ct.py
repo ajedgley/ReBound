@@ -6,6 +6,85 @@ from utils import create_frame_bounding_directory, create_lct_directory
 from waymo_open_dataset.utils import frame_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
+import numpy as np
+import PIL
+import io
+
+
+# Name of all the cameras
+Name  = {
+    0:"UNKNOWN",
+    1:'FRONT',
+    2:'FRONT_LEFT',
+    3:'FRONT_RIGHT',
+    4:'SIDE_LEFT',
+    5:'SIDE_RIGHT'
+  }
+
+def extract_rgb(output_path, waymo_path):
+
+    """Extracts the RGB data from a waymo tfrecord and converts it into our intermediate format
+    Args:
+        output_path: path to LCT directory
+        waymo_path: path to waymo data
+    Returns:
+        None
+        """
+
+    #Extract data from TFRecord File
+    dataset = tf.data.TFRecordDataset(waymo_path,'')
+
+    frame_num = 0
+    #Loop through each frame
+    for data in dataset:
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+        #At this point have one frame imported as 'frame'
+
+        #For the data that's the same in each frame:
+        if(frame_num == 0):
+            camera_data = {}
+            # We get the camera names and their intrinsic data
+            frame_dict = frame_utils.convert_frame_to_dict(frame)
+            for intrinsic_data in frame_dict.keys():
+
+                # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
+                if(intrinsic_data[-10:] == "_INTRINSIC"):
+                    camera_data[intrinsic_data[:-10]] = frame_dict[intrinsic_data].reshape((3, 3)).tolist()
+
+            #frame.pose.transform holds a 4x4 rotation/translation matrix. Here we extract the translation vector:
+            translation = (frame.pose.transform[3],frame.pose.transform[7],frame.pose.transform[11])
+
+            #...and the 3x3 rotation matrix:
+            rot_matrix = [[frame.pose.transform[i*4 + j] for j in range(3)] for i in range(3)]
+            
+            matrix_numpy = np.array(rot_matrix)
+
+            #Next, convert the 3x3 matrix into quaternions:
+            (eigenvalues, eigenvectors) = np.linalg.eig(matrix_numpy)
+            
+            for i in range(3):
+                if(eigenvalues[i] == 1):
+                    eigenu = eigenvectors[:,i]
+            
+            trace_matrix = matrix_numpy.diagonal().sum()
+            cos_theta = (trace_matrix - 1) / 2
+
+            sine_half_theta = ((1 - cos_theta)/ 2)**0.5
+
+            rotation_quats = (((1 + cos_theta)/ 2)**0.5, float(sine_half_theta * eigenu[0]),
+            float(sine_half_theta * eigenu[1]), float(sine_half_theta * eigenu[2]))
+
+        # finally, with all that settled, let's create the directory and files:
+        for image in frame.images:
+            if (frame_num == 0):
+                utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats,
+                camera_data[Name[image.name]])
+            utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
+        frame_num += 1
+
+        
+    
 
 #Get command line options
 def parse_options():
@@ -57,6 +136,7 @@ if __name__ == "__main__":
         print("The file specified is not a tfrecord")
         sys.exit(2)
 
+    path = os.getcwd()
     if len(custom_path) != 0:
         create_lct_directory(os.getcwd().join(custom_path), folder_name)
     else:
