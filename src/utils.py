@@ -45,11 +45,11 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     #Create necessary directories: ./Cameras and ./Cameras/[name]. These directories are needed for the
     #file, so the program creates them.
     try:
-        os.mkdir(os.path.join(path, "Cameras"))
+        os.mkdir(os.path.join(path, "cameras"))
     except FileExistsError:
         pass
     
-    work_dir = os.path.join(os.path.join(path, "Cameras"), name)
+    work_dir = os.path.join(os.path.join(path, "cameras"), name)
     try:
         os.mkdir(work_dir)
     except FileExistsError:
@@ -85,7 +85,7 @@ def add_rgb_frame(path, name, image, frame):
         """
 
     #Assumes directory exists
-    image.save(os.path.join(os.path.join(os.path.join(path, "Cameras"), name),
+    image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
     str(frame) +".jpg"))
 
 
