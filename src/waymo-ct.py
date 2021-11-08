@@ -128,6 +128,38 @@ def extract_bounding(frame, frame_num, lct_path):
         rotations.append([0,0,0,0])
         confidences.append(100)
     utils.create_frame_bounding_directory(folder_name, frame_num, origins, sizes,rotations,annotation_names,confidences)
+
+#Uses the first frame to initialize 
+def setup_lidar(frame, lct_path, translations, rotations):
+    calibrations = sorted(frame.context.laser_calibrations, key=lambda c: c.name)
+    for c in calibrations:
+        sensor = c.name
+
+        #Set up the folder for each sensor
+        utils.create_lidar_sensor_directory(lct_path, Name[sensor])
+        transform_matrix = c.extrinsic.transform
+
+        #The transaltion matrices are the same for each frame, so this computation is only run once
+        translation, rotation = translation_and_rotation(transform_matrix)
+        translations[sensor] = translation
+        rotations[sensor] = rotation
+
+#Extracts LiDAR data from one frame and puts it in the lct file system
+def extract_lidar(frame, frame_num, lct_path, translations, rotations):
+    
+    #Extract the pointclouds as a list of points
+    range_images, camera_projections,range_image_top_pose = frame_utils.parse_range_image_and_camera_projection(frame)
+    point_clouds, cp_points = frame_utils.convert_range_image_to_point_cloud(frame,range_images,camera_projections,range_image_top_pose,0,False)
+
+    #There are 5 pointclouds corresponding to the 5 sensors
+    for i in range(len(point_clouds)):
+        points = point_clouds[i]
+        sensor = i+1
+        translation = translations[sensor]
+        rotation = rotations[sensor]
+        utils.add_lidar_frame(lct_path, Name[sensor], frame_num, points, translation, rotation)
+
+
 if __name__ == "__main__":
     (waymo_path, folder_name, custom_path) = parse_options()
 
@@ -145,13 +177,20 @@ if __name__ == "__main__":
     #Extract data from TFRecord File
     dataset = tf.data.TFRecordDataset(waymo_path,'')
 
+    #Initialize LiDAR camera dictionarys
+    translations = {}
+    rotations = {}
+
     #Loop through each frame
     counter = 0
     for data in dataset:
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
+        if counter == 0:
+            setup_lidar(frame, folder_name, translations, rotations)
         #At this point have one frame imported as 'frame'
         extract_bounding(frame,counter,folder_name)
+        extract_lidar(frame, counter, folder_name, translations, rotations)
         counter += 1
         
 
