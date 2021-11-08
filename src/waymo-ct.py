@@ -2,7 +2,7 @@
 import sys
 import getopt
 import os
-from utils import create_frame_bounding_directory, create_lct_directory
+import utils
 from waymo_open_dataset.utils import frame_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
@@ -127,7 +127,7 @@ def extract_bounding(frame, frame_num, lct_path):
         annotation_names.append(annotation_dict[label.type])
         rotations.append([0,0,0,0])
         confidences.append(100)
-    create_frame_bounding_directory(folder_name, frame_num, origins, sizes,rotations,annotation_names,confidences)
+    utils.create_frame_bounding_directory(folder_name, frame_num, origins, sizes,rotations,annotation_names,confidences)
 if __name__ == "__main__":
     (waymo_path, folder_name, custom_path) = parse_options()
 
@@ -138,9 +138,9 @@ if __name__ == "__main__":
 
     path = os.getcwd()
     if len(custom_path) != 0:
-        create_lct_directory(os.getcwd().join(custom_path), folder_name)
+        utils.create_lct_directory(os.getcwd().join(custom_path), folder_name)
     else:
-        create_lct_directory(os.getcwd(), folder_name)
+        utils.create_lct_directory(os.getcwd(), folder_name)
 
     #Extract data from TFRecord File
     dataset = tf.data.TFRecordDataset(waymo_path,'')
