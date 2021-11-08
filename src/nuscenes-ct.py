@@ -9,14 +9,10 @@ import sys
 import os
 import utils
 
-import utils
-
 from nuscenes.nuscenes import NuScenes
 
 from nuscenes.utils.data_classes import LidarPointCloud
 from nuscenes.utils.data_classes import Quaternion
-
-from utils import create_lct_directory
 
 import numpy as np
 
@@ -66,7 +62,7 @@ def validate_io_paths(input_path, output_path):
         print("DEBUG: stacktrace is as follows.", str(error))
 
     # Output directory path is validated in utils.create_lct_directory()
-    create_lct_directory(os.getcwd(), output_path)
+    utils.create_lct_directory(os.getcwd(), output_path)
 
 def extract_ego(nusc, sample, frame_num, output_path):
     sensor = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
@@ -100,6 +96,30 @@ def extract_rgb(sample, nusc, frame_num, target_path):
     for camera in camera_list:
         (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data'][camera])
         utils.add_rgb_frame_from_jpg(target_path, camera, frame_num, path)
+
+def extract_lidar(nusc, sample, frame_num, target_path):
+    """Used to extract the LIDAR pointcloud information from the nuScenes dataset
+    Args:
+        nusc: NuScenes api object for getting info related to LiDAR data
+        sample: All the sensor information
+        frame_num: Frame number
+        target_path: Output directory path where data will be written to
+    """
+    
+    # We'll need to get all the information we need to pass to utils.add_lidar_frame()
+    # Get the points, translation, and rotation info using our nusc input
+    sensor = nusc.get('sample_data', sample['data']["LIDAR_TOP"])
+    cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
+    (path, boxes, camera_intrinsic) = nusc.get_sample_data(sample['data']["LIDAR_TOP"])
+    points = LidarPointCloud.from_file(path)
+    translation = cs_record['translation']
+    rotation = cs_record['rotation']
+
+    # Reshape points
+    points = np.transpose(points.points[:3, :])
+
+    utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
+
         
     
 # Driver for nuscenes conversion tool
@@ -134,12 +154,15 @@ if __name__ == "__main__":
         cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
         utils.create_rgb_sensor_directory(output_path, camera, cs_record['translation'], cs_record['rotation'], cs_record['camera_intrinsic'])
 
+    #Set up LiDAR Directory
+    utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
 
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
         extract_ego(nusc, sample, frame_num, output_path)
         extract_bounding(sample, frame_num, output_path)
         extract_rgb(sample, nusc, frame_num, output_path)
+        extract_lidar(nusc, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
 
