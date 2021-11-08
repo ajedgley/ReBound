@@ -6,7 +6,43 @@ import os
 import sys
 import json
 import PIL
+import numpy as np
 from shutil import copyfile
+
+#Takes a 1x16 list representing a 4x4 rotation matrix
+#Returns a 1x3 translation vector and a 1x4 rotation quaternion
+def translation_and_rotation(transform_matrix):
+
+    transform_array = np.array(transform_matrix).reshape(4, 4)
+
+    #Extract the first 3 entries in the last column as the translation
+    translation = tuple(transform_array[:-1, -1])
+
+    #Extract the 3x3 rotation matrix from the upper left
+    rotation_matrix = transform_array[:-1, :-1]
+
+    #Next, convert the 3x3 matrix into quaternions:
+    (eigenvalues, eigenvectors) = np.linalg.eig(rotation_matrix)
+    
+    #Find the eigenvector with eigenvalue 1, which is guaranteed to exist
+    for i in range(3):
+        if np.isclose(eigenvalues[i], 1):
+            eigenu = eigenvectors[:,i]
+
+    #Check whether sin(theta/2) is positive or negative
+    not_parallel = [1, 1, 1] if eigenu[0]*eigenu[1] < 0 else [1, -1, 1]
+    orthogonal = np.cross(eigenu, not_parallel)
+    sign_check = np.dot(np.cross(orthogonal, np.dot(rotation_matrix, orthogonal)), eigenu)
+    sine_sign = 1 if (sign_check > 0) else -1
+
+    #Calculated trig functions for the quaternion
+    trace = np.trace(rotation_matrix)
+    cos_theta = (trace - 1) / 2
+    sine_half_theta = sine_sign*((1 - cos_theta)/ 2)**0.5
+    cos_half_theta = ((1 + cos_theta)/ 2)**0.5
+
+    rotation = (sine_half_theta * eigenu[0].real, sine_half_theta * eigenu[1].real, sine_half_theta * eigenu[2].real, cos_half_theta)
+    return translation, rotation
 
 
 #Creates top level lct directory structure at "path"
@@ -45,11 +81,11 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     #Create necessary directories: ./Cameras and ./Cameras/[name]. These directories are needed for the
     #file, so the program creates them.
     try:
-        os.mkdir(os.path.join(path, "Cameras"))
+        os.mkdir(os.path.join(path, "cameras"))
     except FileExistsError:
         pass
     
-    work_dir = os.path.join(os.path.join(path, "Cameras"), name)
+    work_dir = os.path.join(os.path.join(path, "cameras"), name)
     try:
         os.mkdir(work_dir)
     except FileExistsError:
@@ -85,9 +121,21 @@ def add_rgb_frame(path, name, image, frame):
         """
 
     #Assumes directory exists
-    image.save(os.path.join(os.path.join(os.path.join(path, "Cameras"), name),
+    image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
     str(frame) +".jpg"))
 
+def add_rgb_frame_from_jpg(path, name, frame, input_path):
+    """Copies existing jpg file into the cameras directory
+    Args:
+        path: path to LCT directory
+        name: name of RGB sensor
+        frame: the number corresponding to the frame
+        input_path: Path to source jpg iamge
+    Returns:
+        None
+        """
+    full_path = os.path.join(path, 'cameras', name, str(frame) + '.jpg')
+    copyfile(input_path, full_path)
 
 def create_lidar_sensor_directory(path, name):
     full_path = os.path.join(path, 'pointcloud', name)
