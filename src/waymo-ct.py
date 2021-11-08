@@ -52,28 +52,8 @@ def extract_rgb(output_path, waymo_path):
                 if(intrinsic_data[-10:] == "_INTRINSIC"):
                     camera_data[intrinsic_data[:-10]] = frame_dict[intrinsic_data].reshape((3, 3)).tolist()
 
-            #frame.pose.transform holds a 4x4 rotation/translation matrix. Here we extract the translation vector:
-            translation = (frame.pose.transform[3],frame.pose.transform[7],frame.pose.transform[11])
-
-            #...and the 3x3 rotation matrix:
-            rot_matrix = [[frame.pose.transform[i*4 + j] for j in range(3)] for i in range(3)]
+            translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
             
-            matrix_numpy = np.array(rot_matrix)
-
-            #Next, convert the 3x3 matrix into quaternions:
-            (eigenvalues, eigenvectors) = np.linalg.eig(matrix_numpy)
-            
-            for i in range(3):
-                if(eigenvalues[i] == 1):
-                    eigenu = eigenvectors[:,i]
-            
-            trace_matrix = matrix_numpy.diagonal().sum()
-            cos_theta = (trace_matrix - 1) / 2
-
-            sine_half_theta = ((1 - cos_theta)/ 2)**0.5
-
-            rotation_quats = (((1 + cos_theta)/ 2)**0.5, float(sine_half_theta * eigenu[0]),
-            float(sine_half_theta * eigenu[1]), float(sine_half_theta * eigenu[2]))
 
         # finally, with all that settled, let's create the directory and files:
         for image in frame.images:
@@ -140,7 +120,7 @@ def setup_lidar(frame, lct_path, translations, rotations):
         transform_matrix = c.extrinsic.transform
 
         #The transaltion matrices are the same for each frame, so this computation is only run once
-        translation, rotation = translation_and_rotation(transform_matrix)
+        translation, rotation = utils.translation_and_rotation(transform_matrix)
         translations[sensor] = translation
         rotations[sensor] = rotation
 
@@ -180,6 +160,9 @@ if __name__ == "__main__":
     #Initialize LiDAR camera dictionarys
     translations = {}
     rotations = {}
+
+    #Extracts RGB data
+    extract_rgb(output_path, waymo_path)
 
     #Loop through each frame
     counter = 0
