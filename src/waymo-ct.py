@@ -69,7 +69,7 @@ def extract_rgb(output_path, waymo_path):
 #Get command line options
 def parse_options():
     waymo_path = ""
-    folder_name = ""
+    output_path = ""
     custom_path = ""
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hf:o:p:", "help")
@@ -86,13 +86,13 @@ def parse_options():
         elif opt == "-f":
             waymo_path = arg
         elif opt == "-o":
-            folder_name = arg
+            output_path = arg
         elif opt == '-p':
             custom_path = arg
         else:
             sys.exit(2)
 
-    return (waymo_path, folder_name, custom_path)
+    return (waymo_path, output_path, custom_path)
 
 def extract_bounding(frame, frame_num, lct_path):
     origins = []
@@ -107,7 +107,7 @@ def extract_bounding(frame, frame_num, lct_path):
         annotation_names.append(annotation_dict[label.type])
         rotations.append([0,0,0,0])
         confidences.append(100)
-    utils.create_frame_bounding_directory(folder_name, frame_num, origins, sizes,rotations,annotation_names,confidences)
+    utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes,rotations,annotation_names,confidences)
 
 #Uses the first frame to initialize 
 def setup_lidar(frame, lct_path, translations, rotations):
@@ -141,7 +141,7 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
 
 
 if __name__ == "__main__":
-    (waymo_path, folder_name, custom_path) = parse_options()
+    (waymo_path, output_path, custom_path) = parse_options()
 
     #Check if path specified is a Waymo dataset file
     if os.path.splitext(waymo_path)[1] != ".tfrecord":
@@ -150,9 +150,9 @@ if __name__ == "__main__":
 
     path = os.getcwd()
     if len(custom_path) != 0:
-        utils.create_lct_directory(os.getcwd().join(custom_path), folder_name)
+        utils.create_lct_directory(os.getcwd().join(custom_path), output_path)
     else:
-        utils.create_lct_directory(os.getcwd(), folder_name)
+        utils.create_lct_directory(os.getcwd(), output_path)
 
     #Extract data from TFRecord File
     dataset = tf.data.TFRecordDataset(waymo_path,'')
@@ -170,10 +170,10 @@ if __name__ == "__main__":
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
         if counter == 0:
-            setup_lidar(frame, folder_name, translations, rotations)
+            setup_lidar(frame, output_path, translations, rotations)
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame,counter,folder_name)
-        extract_lidar(frame, counter, folder_name, translations, rotations)
+        extract_bounding(frame,counter,output_path)
+        extract_lidar(frame, counter, output_path, translations, rotations)
         counter += 1
         
 
