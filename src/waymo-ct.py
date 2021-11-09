@@ -139,9 +139,9 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
         rotation = rotations[sensor]
         utils.add_lidar_frame(lct_path, Name[sensor], frame_num, points, translation, rotation)
 
-def extract_ego(frame, lct_path):
+def extract_ego(frame, frame_num, lct_path):
     translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
-    utils.create_ego_directory(lct_path, frame, translation, rotation_quats)
+    utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
 
 if __name__ == "__main__":
     (waymo_path, output_path, custom_path) = parse_options()
@@ -168,17 +168,17 @@ if __name__ == "__main__":
     extract_rgb(output_path, waymo_path)
 
     #Loop through each frame
-    counter = 0
+    frame_num = 0
     for data in dataset:
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
-        if counter == 0:
+        if frame_num == 0:
             setup_lidar(frame, output_path, translations, rotations)
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame,counter,output_path)
-        extract_lidar(frame, counter, output_path, translations, rotations)
-        extract_ego(frame, output_path)
-        counter += 1
+        extract_bounding(frame,frame_num,output_path)
+        extract_lidar(frame, frame_num, output_path, translations, rotations)
+        extract_ego(frame, frame_num, output_path)
+        frame_num += 1
         
 
     
