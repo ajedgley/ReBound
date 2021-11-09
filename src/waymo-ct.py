@@ -43,23 +43,27 @@ def extract_rgb(output_path, waymo_path):
 
         #For the data that's the same in each frame:
         if(frame_num == 0):
-            camera_data = {}
+            camera_data_int = {}
+            camera_data_ext = {}
             # We get the camera names and their intrinsic data
             frame_dict = frame_utils.convert_frame_to_dict(frame)
-            for intrinsic_data in frame_dict.keys():
+            for trinsic_data in frame_dict.keys():
 
                 # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
-                if(intrinsic_data[-10:] == "_INTRINSIC"):
-                    camera_data[intrinsic_data[:-10]] = frame_dict[intrinsic_data].reshape((3, 3)).tolist()
+                if(trinsic_data[-10:] == "_INTRINSIC"):
+                    camera_data_int[trinsic_data[:-10]] = frame_dict[trinsic_data].reshape((3, 3)).tolist()
 
-            translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
+                if(trinsic_data[-10:] == "_EXTRINSIC"):
+                    camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
+
             
 
         # finally, with all that settled, let's create the directory and files:
         for image in frame.images:
             if (frame_num == 0):
+                translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
                 utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats,
-                camera_data[Name[image.name]])
+                camera_data_int[Name[image.name]])
             utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
         frame_num += 1
 
@@ -168,17 +172,18 @@ if __name__ == "__main__":
     extract_rgb(output_path, waymo_path)
 
     #Loop through each frame
-    counter = 0
+    frame_num = 0
     for data in dataset:
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
-        if counter == 0:
+        if frame_num == 0:
             setup_lidar(frame, output_path, translations, rotations)
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame,counter,output_path)
-        extract_lidar(frame, counter, output_path, translations, rotations)
-        extract_ego(frame, output_path)
-        counter += 1
+        extract_bounding(frame,frame_num,output_path)
+        extract_lidar(frame, frame_num, output_path, translations, rotations)
+        extract_ego(frame, frame_num, output_path)
+        frame_num += 1
+
         
 
     
