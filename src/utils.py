@@ -300,22 +300,54 @@ def is_lct_directory(path):
     return is_verified
 
 
-#TODO implement
 #Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
 #Parameter is the path to the cameras dir
 #Returns false if not valid and true otherwise
 #Will print out reason for invalidity if one exists
 def check_inside_cameras(path):
-    for dir in os.listdir(path):
-        print()
+    is_verified = True
     
-    return True
+    #cameras
+    for dir in os.listdir(path):
+        has_in = False
+        has_ex = False
+        has_jpg = True
+        #files in cameras
+        for file in os.listdir(os.path.join(path, dir)):
+            if file == "Extrinsics.JSON": 
+                if not has_ex: 
+                    has_ex = True
+                else:
+                    is_verified = False
+                    print("directory " + dir + " has multiple Extrinsics.JSON files")
+            elif file == "Intrinsics.JSON":
+                if not has_in:
+                    has_in = True
+                else:
+                    is_verified = False
+                    print("directory " + dir + " has multiple Intrinsics.JSON files")
+            else:
+                extension = file[-4:]
+                if not extension == ".jpg":
+                    is_verified = False
+                    print("There are files in " + dir + "that are not Intrinsics.JSON, Extrinsics.JSON or .jpgs")
+    
+    return is_verified
 
-#TODO implement
+
 #Checks to make sure that all the subdirectories of cameras only have .pcd files
 #Returns false if not valid and true otherwise
 #Will print out reason for invalidity if one exists
 def check_inside_pointcloud(path):
-    print()
-    return True
+    is_verified = True
+
+    for dir in os.listdir(path):
+        for file in os.listdir(os.path.join(path, dir)):
+            extension = file[-4:]
+            if not extension == ".pcd":
+                is_verified = False
+                print("There is a file in " + dir + " that is not a .pcd file")
+    
+    return is_verified
+
 
