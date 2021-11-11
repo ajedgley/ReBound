@@ -106,7 +106,8 @@ def extract_bounding(frame, frame_num, lct_path):
     annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
     confidences = []
     for label in frame.laser_labels:
-        origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
+        origins.append(np.transpose(np.matmul(np.array(frame.pose.transform).reshape((4, 4)), np.array(
+            [[label.box.center_x], [label.box.center_y], [label.box.center_z], [1]]))).tolist()[0][:3])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         rotations.append([0,0,0,0])
