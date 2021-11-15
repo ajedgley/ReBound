@@ -136,9 +136,6 @@ if __name__ == "__main__":
     # specified path. 
     
 
-    #Hard code scene name for now:
-    scene_name = "scene-0061"
-
     validate_io_paths(input_path, output_path)
     nusc = NuScenes('v1.0-mini', input_path, True)
     nusc.list_scenes()
