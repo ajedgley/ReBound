@@ -8,6 +8,8 @@ import json
 import PIL
 import numpy as np
 from shutil import copyfile
+from pyquaternion import Quaternion
+from scipy.spatial.transform import Rotation as R
 
 #Takes a 1x16 list representing a 4x4 rotation matrix
 #Returns a 1x3 translation vector and a 1x4 rotation quaternion
@@ -16,32 +18,15 @@ def translation_and_rotation(transform_matrix):
     transform_array = np.array(transform_matrix).reshape(4, 4)
 
     #Extract the first 3 entries in the last column as the translation
-    translation = tuple(transform_array[:-1, -1])
+    translation = tuple(transform_array[:3, -1])
 
     #Extract the 3x3 rotation matrix from the upper left
-    rotation_matrix = transform_array[:-1, :-1]
+    rotation_matrix = transform_array[:3, :3]
 
-    #Next, convert the 3x3 matrix into quaternions:
-    (eigenvalues, eigenvectors) = np.linalg.eig(rotation_matrix)
+    #Convert rotation matrix to a quaternion
+    quat = R.from_matrix(rotation_matrix)
+    rotation = (quat.as_quat()[3], quat.as_quat()[0], quat.as_quat()[1], quat.as_quat()[2])
     
-    #Find the eigenvector with eigenvalue 1, which is guaranteed to exist
-    for i in range(3):
-        if np.isclose(eigenvalues[i], 1):
-            eigenu = eigenvectors[:,i]
-
-    #Check whether sin(theta/2) is positive or negative
-    not_parallel = [1, 1, 1] if eigenu[0]*eigenu[1] < 0 else [1, -1, 1]
-    orthogonal = np.cross(eigenu, not_parallel)
-    sign_check = np.dot(np.cross(orthogonal, np.dot(rotation_matrix, orthogonal)), eigenu)
-    sine_sign = 1 if (sign_check > 0) else -1
-
-    #Calculated trig functions for the quaternion
-    trace = np.trace(rotation_matrix)
-    cos_theta = (trace - 1) / 2
-    sine_half_theta = sine_sign*((1 - cos_theta)/ 2)**0.5
-    cos_half_theta = ((1 + cos_theta)/ 2)**0.5
-
-    rotation = (sine_half_theta * eigenu[0].real, sine_half_theta * eigenu[1].real, sine_half_theta * eigenu[2].real, cos_half_theta)
     return translation, rotation
 
 
@@ -109,32 +94,32 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     intrinsic_file.close()
 
 
-def add_rgb_frame(path, name, image, frame):
+def add_rgb_frame(path, name, image, frame_num):
     """Adds one jpg from one frame to the structure inside the camera directory for a given sensor
     Args:
         path: path to LCT directory
         name: name of RGB sensor
         images: list of buffers containing JPG images (assumed that length of list is also number of frames)
-        frame: the number corresponding to the frame
+        frame_num: the number corresponding to the frame
     Returns:
         None
         """
 
     #Assumes directory exists
     image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
-    str(frame) +".jpg"))
+    str(frame_num) +".jpg"))
 
-def add_rgb_frame_from_jpg(path, name, frame, input_path):
+def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     """Copies existing jpg file into the cameras directory
     Args:
         path: path to LCT directory
         name: name of RGB sensor
-        frame: the number corresponding to the frame
+        frame_num: the number corresponding to the frame
         input_path: Path to source jpg iamge
     Returns:
         None
         """
-    full_path = os.path.join(path, 'cameras', name, str(frame) + '.jpg')
+    full_path = os.path.join(path, 'cameras', name, str(frame_num) + '.jpg')
     copyfile(input_path, full_path)
 
 def create_lidar_sensor_directory(path, name):
@@ -145,11 +130,12 @@ def create_lidar_sensor_directory(path, name):
     except FileExistsError:
         pass
 
-def add_lidar_frame(path, name, frame, points, translation, rotation):
+def add_lidar_frame(path, name, frame_num, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
+        frame_num: frame number
         points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
         translation: (x,y,z) tuple representing sensor translation
         rotation: (w,x,y,z) quaternion representing sensor rotation
@@ -170,23 +156,24 @@ def add_lidar_frame(path, name, frame, points, translation, rotation):
     
     pcd_str = '\n'.join(pcd_lines)
 
-    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
+    full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     
     f = open(full_path, 'w')
     f.write(pcd_str)
     f.close()
 
-def add_lidar_frame_from_pcd(path, name, frame, input_path):
+def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     """Copies one .pcd file to pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
+        frame_num: frame number
         input_path: path to .pcd file
     Returns:
         None
         """
     
-    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
+    full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
 
     copyfile(input_path, full_path)
 
