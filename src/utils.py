@@ -11,9 +11,16 @@ from shutil import copyfile
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
 
-#Takes a 1x16 list representing a 4x4 rotation matrix
-#Returns a 1x3 translation vector and a 1x4 rotation quaternion
+
 def translation_and_rotation(transform_matrix):
+    """Converts tranformation matrix to a translation and rotation our conversion scripts can use
+    Args:
+        transform_matrix: 1x16 list representing a 4x4 transform matrix
+    
+    Returns:
+        translation: 1x3 translation vector
+        rotation: 1x4 rotation quaternion
+    """
 
     transform_array = np.array(transform_matrix).reshape(4, 4)
 
@@ -42,11 +49,11 @@ def create_lct_directory(path, name):
     sub_directories = ['cameras', 'pointcloud', 'bounding', 'ego']
     try:
         parent_path = os.path.join(path, name)
-        os.makedirs(parent_path)
+        os.makedirs(parent_path, exist_ok=True)
         print("added new folder")
         for directory in sub_directories:
             full_path = os.path.join(parent_path, directory)
-            os.mkdir(full_path)
+            os.makedirs(full_path, exist_ok=True)
     except OSError as error:
         print(error)
         sys.exit(1)
@@ -63,18 +70,10 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         None
         """
 
-    #Create necessary directories: ./Cameras and ./Cameras/[name]. These directories are needed for the
-    #file, so the program creates them.
-    try:
-        os.mkdir(os.path.join(path, "cameras"))
-    except FileExistsError:
-        pass
-    
-    work_dir = os.path.join(os.path.join(path, "cameras"), name)
-    try:
-        os.mkdir(work_dir)
-    except FileExistsError:
-        pass
+    #Create necessary directory: ./Cameras/[name]
+    work_dir = os.path.join(path, "cameras", name)
+
+    os.makedirs(work_dir, exist_ok=True)
 
     #Creates the Extrinsic.json file in the /Cameras/[name] directory from the
     #translation and rotation parameters.
@@ -82,16 +81,12 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     extrinsics['translation'] = translation
     extrinsics['rotation'] = rotation
 
-
-    extrinsic_file = open(work_dir + "/extrinsics.json", "w")
-    extrinsic_file.write(json.dumps(extrinsics))
-    extrinsic_file.close()
-
+    with open(work_dir + "/extrinsics.json", "w") as extrinsic_file:
+        extrinsic_file.write(json.dumps(extrinsics))
 
     #Creates the Extrinsic.json file in the /Cameras/[name] directory from the intrinsic parameter.
-    intrinsic_file = open(work_dir + "/intrinsics.json", "w")
-    intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
-    intrinsic_file.close()
+    with open(work_dir + "/intrinsics.json", "w") as intrinsic_file:
+        intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
 
 
 def add_rgb_frame(path, name, image, frame_num):
@@ -123,12 +118,16 @@ def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     copyfile(input_path, full_path)
 
 def create_lidar_sensor_directory(path, name):
-    full_path = os.path.join(path, 'pointcloud', name)
+    """Creates directory for one LiDAR sensor
+    Args:
+        path: path to LCT directory
+        name: name of RGB sensor
+    Returns:
+        None
+        """
 
-    try:
-        os.makedirs(full_path)
-    except FileExistsError:
-        pass
+    full_path = os.path.join(path, 'pointcloud', name)
+    os.makedirs(full_path, exist_ok=True)
 
 def add_lidar_frame(path, name, frame_num, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
@@ -158,9 +157,8 @@ def add_lidar_frame(path, name, frame_num, points, translation, rotation):
 
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     
-    f = open(full_path, 'w')
-    f.write(pcd_str)
-    f.close()
+    with open(full_path, 'w') as f:
+        f.write(pcd_str)
 
 def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     """Copies one .pcd file to pointcloud directory
@@ -174,7 +172,6 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
         """
     
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
-
     copyfile(input_path, full_path)
 
 def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
@@ -201,8 +198,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
 
     #Create directory that stores the boxes in one frame
     full_path = os.path.join(path, 'bounding', str(frame_num))
-    print(full_path)
-    os.mkdir(full_path)
+    os.makedirs(full_path, exist_ok=True)
     
     #Create description.json
     description = {}
@@ -221,6 +217,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
     box_data['rotations'] = rotations
     box_data['annotations'] = annotation_names
     box_data['confidences'] = confidences
+
     with open(json_path, 'w') as f:
         json.dump(box_data, f)
 
@@ -242,6 +239,7 @@ def create_ego_directory(path, frame, translation, rotation):
     ego_data = {}
     ego_data['translation'] = translation
     ego_data['rotation'] = rotation
+
     with open(json_path, 'w') as f:
         json.dump(ego_data, f)
 
@@ -252,7 +250,7 @@ def is_lct_directory(path):
     Args:
         path: path to LCT directory
     Returns:
-        Boolean: True or False
+        is_verified: True if LCT directory is valid or False if not
     """
 
     #individual verification bools
@@ -287,11 +285,16 @@ def is_lct_directory(path):
     return is_verified
 
 
-#Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
-#Parameter is the path to the cameras dir
-#Returns false if not valid and true otherwise
-#Will print out reason for invalidity if one exists
+
 def check_inside_cameras(path):
+    """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
+    Prints out reason for invalidity if one exists
+    Args:
+        path: path to LCT directory
+    Returns:
+        is_verified: false if not valid and true otherwise
+    """
+
     is_verified = True
     
     #cameras
@@ -322,10 +325,15 @@ def check_inside_cameras(path):
     return is_verified
 
 
-#Checks to make sure that all the subdirectories of cameras only have .pcd files
-#Returns false if not valid and true otherwise
-#Will print out reason for invalidity if one exists
 def check_inside_pointcloud(path):
+    """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
+    Prints out reason for invalidity if one exists
+    Args:
+        path: path to LCT directory
+    Returns:
+        is_verified: false if not valid and true otherwise
+    """
+
     is_verified = True
 
     for dir in os.listdir(path):
