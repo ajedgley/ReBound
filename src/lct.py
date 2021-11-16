@@ -190,14 +190,28 @@ class Window:
             #print(box.orientation.rotation_matrix)
             #print(box.wlh)
             
-            #Calculate Box Transformation Matrix
+            #If we are using waymo, the box rotation matrix is already in vehicle
             original_matrix = box.orientation.rotation_matrix
             #Boxes start out in global frame, so translate them to vehicle frame
+
+            
+            """Right now our problem is that Waymo box origins are stored in global, while their rotations are still in vehicle frame
+                While for nuscenes, both rotation and origins are stored in global
+                
+                We should choose to store both in vehicle frame
+                
+            """
+
+
             box.translate(-np.array(self.frame_extrinsic['translation']))
             box.rotate(Quaternion(self.frame_extrinsic['rotation']).inverse)
+            #Calculate Box Transformation Matrix
+
+
+            #If we are using nuscenes, we create our box transform matrix after we have moved everything to vehicle frame
+            original_matrix = box.orientation.rotation_matrix
             
-            
-            #Calculate Box to Vehicle
+            #Calculate Box to Vehicle. The box should be in vehicle frame before doing this
             a = original_matrix[0,0] * box.wlh[1]
             b = -original_matrix[0,1] * box.wlh[0]
             cx = box.center[0]
@@ -279,6 +293,8 @@ class Window:
 
 
             #Transform lidar points into vehicle frame
+
+            #We dont do this anymore since we now store all points in vehicle frame
             #temp_cloud.rotate(sensor_rotation_matrix, [0,0,0])
             #temp_cloud.translate(self.pcd_extrinsic[sensor]['translation'])
 
@@ -313,6 +329,9 @@ class Window:
 
             #print(o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]))
             bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]), size)
+            
+            #This transforms the box from vehicle frame to global frame, so for nuscenes this breaks it since the boxes are already vehicle frame
+            #If we do choose to store boxes in vehicle frame, the we would need to add a translation for the box. R
             bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix)
             self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
         

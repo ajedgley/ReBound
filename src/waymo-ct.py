@@ -196,9 +196,9 @@ if __name__ == "__main__":
             setup_lidar(frame, output_path, translations, rotations)
         
         #At this point have one frame imported as 'frame'
-        #extract_lidar(frame, frame_num, output_path, translations, rotations)
-        #extract_ego(frame, frame_num, output_path)
-        #extract_bounding(frame,frame_num,output_path)
+        extract_lidar(frame, frame_num, output_path, translations, rotations)
+        extract_ego(frame, frame_num, output_path)
+        extract_bounding(frame,frame_num,output_path)
         frame_num += 1
 
 
