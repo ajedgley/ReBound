@@ -112,7 +112,7 @@ def setup_rgb(frame, lct_path):
     
     for image in frame.images:
         translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[RGB_Name[image.name]].tolist())
-        utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGBName[image.name]])
+        utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
 
 def extract_rgb(frame, frame_num, lct_path):
     """Extracts the RGB data from a waymo frame and converts it into our intermediate format
