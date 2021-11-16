@@ -71,7 +71,7 @@ def extract_ego(nusc, sample, frame_num, output_path):
     full_path = os.path.join(os.getcwd(), output_path)
     utils.create_ego_directory(full_path, frame_num, poserecord['translation'], poserecord['rotation'])
 
-def extract_bounding(sample, frame_num, target_path):
+def extract_bounding(nusc, sample, frame_num, target_path):
     origins = []
     sizes = []
     rotations = []
@@ -89,8 +89,26 @@ def extract_bounding(sample, frame_num, target_path):
         
     utils.create_frame_bounding_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
+def extract_pred_bounding(sample, frame_num, target_path):
+    origins = []
+    sizes = []
+    rotations = []
+    annotation_names = []
+    confidences = []
+    
+    for i in range(0, len(sample['anns']) - 1):
+        token = sample['anns'][i]
+        annotation_metadata = nusc.get('sample_annotation', token)
+        origins.append(annotation_metadata['translation'])
+        sizes.append(annotation_metadata['size'])
+        rotations.append(annotation_metadata['rotation'])
+        annotation_names.append(annotation_metadata['category_name'])
+        confidences.append(100)
+        
+    utils.create_frame_predicted_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
-def extract_rgb(sample, nusc, frame_num, target_path):
+
+def extract_rgb(nusc, sample, frame_num, target_path):
     camera_list = ["CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT", "CAM_FRONT_LEFT"]
     #For each camera sensor
     for camera in camera_list:
@@ -157,8 +175,9 @@ if __name__ == "__main__":
     while sample['next'] != '':
         #CALL FUNCTIONS HERE. the variable 'sample' is the frame
         extract_ego(nusc, sample, frame_num, output_path)
-        extract_bounding(sample, frame_num, output_path)
-        extract_rgb(sample, nusc, frame_num, output_path)
+        extract_bounding(nusc, sample, frame_num, output_path)
+        extract_pred_bounding(nusc, sample, frame_num, output_path)
+        extract_rgb(nusc, sample, frame_num, output_path)
         extract_lidar(nusc, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
