@@ -21,54 +21,6 @@ Name  = {
     5:'SIDE_RIGHT'
   }
 
-def extract_rgb(output_path, waymo_path):
-
-    """Extracts the RGB data from a waymo tfrecord and converts it into our intermediate format
-    Args:
-        output_path: path to LCT directory
-        waymo_path: path to waymo data
-    Returns:
-        None
-        """
-
-    #Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(waymo_path,'')
-
-    frame_num = 0
-    #Loop through each frame
-    for data in dataset:
-        frame = open_dataset.Frame()
-        frame.ParseFromString(bytearray(data.numpy()))
-        #At this point have one frame imported as 'frame'
-
-        #For the data that's the same in each frame:
-        if(frame_num == 0):
-            camera_data_int = {}
-            camera_data_ext = {}
-            # We get the camera names and their intrinsic data
-            frame_dict = frame_utils.convert_frame_to_dict(frame)
-            for trinsic_data in frame_dict.keys():
-
-                # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
-                if(trinsic_data[-10:] == "_INTRINSIC"):
-                    camera_data_int[trinsic_data[:-10]] = frame_dict[trinsic_data].reshape((3, 3)).tolist()
-
-                if(trinsic_data[-10:] == "_EXTRINSIC"):
-                    camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
-
-            
-
-        # finally, with all that settled, let's create the directory and files:
-        for image in frame.images:
-            if (frame_num == 0):
-                translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
-                utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats,
-                camera_data_int[Name[image.name]])
-            utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
-        frame_num += 1
-
-        
-    
 
 #Get command line options
 def parse_options():
@@ -113,6 +65,48 @@ def extract_bounding(frame, frame_num, lct_path):
         rotations.append([0,0,0,0])
         confidences.append(100)
     utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes,rotations,annotation_names,confidences)
+
+def setup_rgb(frame, output_path):
+
+    """Sets up the RGB directory with extrinsic data
+    Args:
+        frame: waymo frame
+        output_path: path to LCT directory
+    Returns:
+        None
+        """
+
+    camera_data_int = {}
+    camera_data_ext = {}
+
+    # We get the camera names and their intrinsic data
+    frame_dict = frame_utils.convert_frame_to_dict(frame)
+    for trinsic_data in frame_dict.keys():
+
+        # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
+        if(trinsic_data[-10:] == "_INTRINSIC"):
+            camera_data_int[trinsic_data[:-10]] = frame_dict[trinsic_data].reshape((3, 3)).tolist()
+
+        if(trinsic_data[-10:] == "_EXTRINSIC"):
+            camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
+    
+    for image in frame.images:
+        translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
+        utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats, camera_data_int[Name[image.name]])
+
+def extract_rgb(frame, frame_num):
+
+    """Extracts the RGB data from a waymo frame and converts it into our intermediate format
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+    Returns:
+        None
+        """
+
+    #create the directory and files:
+    for image in frame.images:
+        utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
 
 #Uses the first frame to initialize 
 def setup_lidar(frame, lct_path, translations, rotations):
@@ -169,17 +163,16 @@ if __name__ == "__main__":
     translations = {}
     rotations = {}
 
-    #Extracts RGB data
-    extract_rgb(output_path, waymo_path)
-
     #Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
         if frame_num == 0:
+            setup_rgb(frame, output_path)
             setup_lidar(frame, output_path, translations, rotations)
         #At this point have one frame imported as 'frame'
         extract_bounding(frame,frame_num,output_path)
+        extract_rgb(frame, frame_num)
         extract_lidar(frame, frame_num, output_path, translations, rotations)
         extract_ego(frame, frame_num, output_path)
         
