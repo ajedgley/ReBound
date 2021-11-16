@@ -173,8 +173,7 @@ if __name__ == "__main__":
     extract_rgb(output_path, waymo_path)
 
     #Loop through each frame
-    frame_num = 0
-    for data in dataset:
+    for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
         if frame_num == 0:
@@ -183,7 +182,6 @@ if __name__ == "__main__":
         extract_bounding(frame,frame_num,output_path)
         extract_lidar(frame, frame_num, output_path, translations, rotations)
         extract_ego(frame, frame_num, output_path)
-        frame_num += 1
         
 
     
