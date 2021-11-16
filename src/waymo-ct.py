@@ -12,7 +12,7 @@ import io
 
 
 # Name of all the cameras
-Name  = {
+RGB_Name  = {
     0:"UNKNOWN",
     1:'FRONT',
     2:'FRONT_LEFT',
@@ -20,6 +20,16 @@ Name  = {
     4:'SIDE_LEFT',
     5:'SIDE_RIGHT'
   }
+
+Lidar_Name = {
+    0:"UNKNOWN",
+    1:"TOP",
+    2:"FRONT",
+    3:"SIDE_LEFT",
+    4:"SIDE_RIGHT",
+    5:"REAR"
+}
+
 
 
 #Get command line options
@@ -91,8 +101,8 @@ def setup_rgb(frame, output_path):
             camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
     
     for image in frame.images:
-        translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
-        utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats, camera_data_int[Name[image.name]])
+        translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[RGB_Name[image.name]].tolist())
+        utils.create_rgb_sensor_directory(output_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGBName[image.name]])
 
 def extract_rgb(frame, frame_num):
 
@@ -106,7 +116,7 @@ def extract_rgb(frame, frame_num):
 
     #create the directory and files:
     for image in frame.images:
-        utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
+        utils.add_rgb_frame(output_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
 
 #Uses the first frame to initialize 
 def setup_lidar(frame, lct_path, translations, rotations):
@@ -115,7 +125,7 @@ def setup_lidar(frame, lct_path, translations, rotations):
         sensor = c.name
 
         #Set up the folder for each sensor
-        utils.create_lidar_sensor_directory(lct_path, Name[sensor])
+        utils.create_lidar_sensor_directory(lct_path, Lidar_Name[sensor])
         transform_matrix = c.extrinsic.transform
 
         #The transaltion matrices are the same for each frame, so this computation is only run once
@@ -136,7 +146,7 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
         sensor = i+1
         translation = translations[sensor]
         rotation = rotations[sensor]
-        utils.add_lidar_frame(lct_path, Name[sensor], frame_num, points, translation, rotation)
+        utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translation, rotation)
 
 def extract_ego(frame, frame_num, lct_path):
     translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
