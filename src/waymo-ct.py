@@ -80,7 +80,7 @@ def extract_bounding(frame, frame_num, lct_path):
     confidences = []
 
     for label in frame.laser_labels:
-        origins.append([[label.box.center_x], [label.box.center_y], [label.box.center_z]])
+        origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)

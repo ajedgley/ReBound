@@ -14,6 +14,7 @@ import sys
 import io
 import numpy as np
 from numpy import core
+from numpy.core.numeric import normalize_axis_tuple
 import open3d.visualization.gui as gui
 from PIL import Image
 import open3d as o3d
@@ -31,6 +32,7 @@ from scipy.spatial.transform import Rotation as R
 def get_3d_box_projected_corners(box_to_image):
     # Use Box to image transform matrix to transform the vertices of a "unit box" centered at the origin to
     # Vertices in the rgb camera frame
+
     vertices = np.empty([2,2,2,2])
     for k in [0, 1]:
         for l in [0, 1]:
@@ -41,7 +43,7 @@ def get_3d_box_projected_corners(box_to_image):
                 # Project the point onto the image
                 v = np.matmul(box_to_image, v)
 
-                # If any of the corner is behind the camera, ignore this object.
+                # If any of the corners is behind the camera, ignore this object.
                 if v[2] < 0:
                     return None
 
@@ -79,6 +81,8 @@ def parse_options():
 class Window:
     MENU_IMPORT = 1
     def __init__(self, lct_dir):
+        
+        np.set_printoptions(precision=15)
 
         #Create the objects for the 3 windows that appear when running the application
         self.controls = gui.Application.instance.create_window("LCT", 400, 768)
@@ -171,61 +175,48 @@ class Window:
     #Uses nuScenes API to project 3D bounding boxes onto that plt figure
     #Finally, extracts raw image data from plt figure and updates our image widget
     def update_image(self):
-        self.ax.clear()
-
-
         #Extract new image from file
         self.image = np.asarray(Image.open(self.image_path))
 
-        self.ax.imshow(self.image)
         #Set image width and height   
         #Figure out which bounding boxes are in our frame
         for box in self.n_boxes:
 
-            #Calculate Box to Vehicle transform matrix. The box should be in vehicle frame before doing this
-            a = box.orientation.rotation_matrix[0,0] * box.wlh[1]
-            b = -box.orientation.rotation_matrix[0,1] * box.wlh[0]
-            cx = box.center[0]
-            d = box.orientation.rotation_matrix[1,0] * box.wlh[1]
-            e = box.orientation.rotation_matrix[1,1] * box.wlh[0]
-            f = box.wlh[2]
-            gy = box.center[1]
-            gz = box.center[2]
-
-            box_to_vehicle = np.array([
-                [a,b,0,cx],
-                [d,e,0,gy],
-                [0,0,f,gz],
-                [0,0,0,1]
-            ])
-
-            #Create Vehicle To RGB sensor pose transform matrix
-            extrinsic = transform_matrix(self.image_extrinsic['translation'], Quaternion(self.image_extrinsic['rotation']))
-            i = self.image_intrinsic['matrix']
-            image_intrinsic = np.array([
-                [i[0][0], 0, i[0][2], 0],
-                [0, i[1][1], i[1][2], 0],
-                [0, 0, 1, 0]])
+            #Box is stored in vehicle frame, so transform it to rgb sensor frame
+            box.translate(-np.array(self.image_extrinsic['translation']))
+            box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
             
-            vehicle_to_image = np.matmul(image_intrinsic, np.linalg.inv(extrinsic))
-            
-            #Create Box_to_image matrix that will transform our "Unit Box" to a box in the camera sensor frame
-            box_to_image = np.matmul(vehicle_to_image, box_to_vehicle)
+            if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
+                #If the box is in view, then render it onto the plt frame
+                corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
+                def draw_rect(selected_corners, color):
+                    prev = selected_corners[-1]
+                    for corner in selected_corners:
+                        cv2.line(self.image,
+                                (int(prev[0]), int(prev[1])),
+                                (int(corner[0]), int(corner[1])),
+                                color, 2)
+                        prev = corner
 
+                # Draw the sides
+                for i in range(4):
+                    cv2.line(self.image,
+                            (int(corners.T[i][0]), int(corners.T[i][1])),
+                            (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+                            (255, 0, 0), 2)
 
-            #Call function that returns the vertices of each box in rgb sensor frame
-            vertices = get_3d_box_projected_corners(box_to_image)
-                        
-            #Don't draw the box if it is "None"
-            if vertices is None:
-                continue
-              
-            #Finally, Draw this Box
-            for k in [0, 1]:
-                for l in [0, 1]:
-                    for idx1,idx2 in [((0,k,l),(1,k,l)), ((k,0,l),(k,1,l)), ((k,l,0),(k,l,1))]:
-                        cv2.line(self.image, tuple(vertices[idx1]), tuple(vertices[idx2]), (255,0,0), thickness=3)
-  
+                # Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
+                draw_rect(corners.T[:4], (255, 0, 0))
+                draw_rect(corners.T[4:], (255, 0, 0))
+
+                # Draw line indicating the front
+                center_bottom_forward = np.mean(corners.T[2:4], axis=0)
+                center_bottom = np.mean(corners.T[[2, 3, 7, 6]], axis=0)
+                cv2.line(self.image,
+                        (int(center_bottom[0]), int(center_bottom[1])),
+                        (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
+                        (0, 0, 255)[::-1], 2)
+
         new_image = o3d.geometry.Image(self.image)
         self.image_widget.update_image(new_image)
 
