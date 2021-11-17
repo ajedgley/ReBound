@@ -28,29 +28,6 @@ from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibili
 
 from scipy.spatial.transform import Rotation as R
 
-
-def get_3d_box_projected_corners(box_to_image):
-    # Use Box to image transform matrix to transform the vertices of a "unit box" centered at the origin to
-    # Vertices in the rgb camera frame
-
-    vertices = np.empty([2,2,2,2])
-    for k in [0, 1]:
-        for l in [0, 1]:
-            for m in [0, 1]:
-                # 3D point in the box space
-                v = np.array([(k-0.5), (l-0.5), (m-0.5), 1.])
-
-                # Project the point onto the image
-                v = np.matmul(box_to_image, v)
-
-                # If any of the corners is behind the camera, ignore this object.
-                if v[2] < 0:
-                    return None
-
-                vertices[k,l,m,:] = [v[0]/v[2], v[1]/v[2]]
-    vertices = vertices.astype(np.int32)
-    return vertices
-
 # Parse CLI args and validate input
 def parse_options():
 
