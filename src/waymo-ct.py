@@ -228,7 +228,7 @@ if __name__ == "__main__":
     frame_count = count_frames(dataset)
 
     #start progress bar
-    print_progress_bar(0, frame_count)
+    utils.print_progress_bar(0, frame_count)
     #Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
@@ -245,7 +245,7 @@ if __name__ == "__main__":
         extract_ego(frame, frame_num, output_path)
 
         #Update progress bar
-        print_progress_bar(frame_num, frame_count)
+        utils.print_progress_bar(frame_num+1, frame_count)
         
 
     
