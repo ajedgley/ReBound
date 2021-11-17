@@ -181,8 +181,28 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
         utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translation, rotation)
 
 def extract_ego(frame, frame_num, lct_path):
+    """Extracts ego data from one frame and puts it in the lct file system
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
     translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
     utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
+
+def count_frames(dataset):
+    """counts frames to use for progress bar
+    Args:
+        dataset: waymo dataset
+    Returns:
+        frame_count: number of frames
+        """
+    frame_count = 0
+    for frame in dataset:
+        frame_count += 1
+    return frame_count
 
 if __name__ == "__main__":
     (waymo_path, output_path, custom_path) = parse_options()
@@ -205,6 +225,10 @@ if __name__ == "__main__":
     translations = {}
     rotations = {}
 
+    frame_count = count_frames(dataset)
+
+    #start progress bar
+    print_progress_bar(0, frame_count)
     #Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
@@ -219,6 +243,9 @@ if __name__ == "__main__":
         extract_rgb(frame, frame_num, output_path)
         extract_lidar(frame, frame_num, output_path, translations, rotations)
         extract_ego(frame, frame_num, output_path)
+
+        #Update progress bar
+        print_progress_bar(frame_num, frame_count)
         
 
     
