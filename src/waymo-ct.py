@@ -11,6 +11,7 @@ import numpy as np
 import PIL
 import io
 from pyquaternion import Quaternion
+import concurrent.futures
 
 # Name of all the RGB cameras
 RGB_Name  = {
@@ -226,9 +227,11 @@ if __name__ == "__main__":
     rotations = {}
 
     frame_count = count_frames(dataset)
+    executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
+    futures = []
 
     #start progress bar
-    print_progress_bar(0, frame_count)
+    utils.print_progress_bar(0, frame_count)
     #Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
@@ -239,13 +242,23 @@ if __name__ == "__main__":
             setup_lidar(frame, output_path, translations, rotations)
         
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame, frame_num, output_path)
-        extract_rgb(frame, frame_num, output_path)
-        extract_lidar(frame, frame_num, output_path, translations, rotations)
-        extract_ego(frame, frame_num, output_path)
+        #extract_bounding(frame, frame_num, output_path)
+        #extract_rgb(frame, frame_num, output_path)
+        #extract_lidar(frame, frame_num, output_path, translations, rotations)
+        #extract_ego(frame, frame_num, output_path)
 
         #Update progress bar
-        print_progress_bar(frame_num, frame_count)
+        #utils.print_progress_bar(frame_num, frame_count)
+        futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
+        executor.submit(extract_rgb, frame, frame_num, output_path),
+        executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
+        executor.submit(extract_ego, frame, frame_num, output_path)])
+
+    frame_num = 0
+    for frame in futures:
+        concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
+        frame_num += 1
+        utils.print_progress_bar(frame_num, frame_count)
         
 
     
