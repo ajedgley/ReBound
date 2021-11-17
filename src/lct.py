@@ -71,8 +71,10 @@ class Window:
         #be extracted from the LVT Directory
 
         self.lct_path = lct_dir
-        print(self.lct_path)
+
         self.camera_sensors, self.lidar_sensors = self.get_cams_and_pointclouds(self.lct_path)
+
+        self.box_data_name = "bounding"
         
         #These two values represent the current Lidar and RGB sensors being displayed
         self.rgb_sensor_name = self.camera_sensors[0]
@@ -136,9 +138,20 @@ class Window:
         frame_switch_layout.add_child(gui.Label("Switch Frame"))
         frame_switch_layout.add_child(frame_select)
 
+        #Add combobox to switch between predicted and ground truth
+        bounding_toggle = gui.Combobox()
+        bounding_toggle.add_item("Ground Truth")
+        bounding_toggle.add_item("Predicted")
+        bounding_toggle.set_on_selection_changed(self.toggle_bounding)
+
+        bounding_toggle_layout = gui.Horiz()
+        bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
+        bounding_toggle_layout.add_child(bounding_toggle)
+
         #Add our two horizontal widgets to the vertical widget
         layout.add_child(sensor_switch_layout)
         layout.add_child(frame_switch_layout)
+        layout.add_child(bounding_toggle_layout)
 
         #Add the master widgets to our three windows
         cw.add_child(layout)
@@ -202,7 +215,8 @@ class Window:
 
     #Updates bounding box information when switching frames
     def update_bounding(self):
-        self.boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+        self.boxes = json.load(open(os.path.join(self.lct_path ,self.box_data_name, str(self.frame_num), "boxes.json")))
+        print(self.boxes['origins'][0])
         self.n_boxes = []
         for i in range(0, len(self.boxes['origins'])):
             self.n_boxes.append(Box(self.boxes['origins'][i], self.boxes['sizes'][i], Quaternion(self.boxes['rotations'][i]), name=self.boxes['annotations'][i], score=self.boxes['confidences'][i], velocity=(0,0,0)))
@@ -216,7 +230,6 @@ class Window:
   
         for i, pcd_path in enumerate(self.pcd_paths):
             temp_cloud = o3d.io.read_point_cloud(pcd_path)
-            sensor = self.lidar_sensors[i]
             #sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
             ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
 
@@ -295,6 +308,12 @@ class Window:
         #Update Bounding Box List
         self.update()
 
+    def toggle_bounding(self, new_val, new_idx):
+        if new_val == "Predicted":
+            self.box_data_name = "pred_bounding"
+        else:
+            self.box_data_name = "bounding"
+        self.update()
     #Function that updates all displayed data based on the current state of the controls window
     def update(self):
         self.update_image_path()
