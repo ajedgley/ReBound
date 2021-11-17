@@ -45,10 +45,14 @@ def print_progress_bar(frame_num, total):
         None
         """
 
-    length = 50
+    length = 40
+    if os.get_terminal_size()[0] < 50:
+        length = 10
+    elif os.get_terminal_size()[0] < 70:
+        length = 20
     filled_length = (length * frame_num//total)
     bar = '█' * filled_length + '-' * (length - filled_length)
-    print(f'\rConverting data: {bar} {frame_num}/{total} frames converted', end = '\r')
+    print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
     # Print New Line on Complete
     if frame_num == total: 
         print()
