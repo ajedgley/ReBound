@@ -99,7 +99,7 @@ def extract_bounding(nusc, sample, frame_num, target_path):
         
     utils.create_frame_bounding_directory(target_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
-def extract_pred_bounding(sample, frame_num, target_path):
+def extract_pred_bounding(nusc, sample, frame_num, target_path):
     origins = []
     sizes = []
     rotations = []
