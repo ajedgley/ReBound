@@ -46,7 +46,7 @@ def create_lct_directory(path, name):
     Returns:
         None
     """
-    sub_directories = ['cameras', 'pointcloud', 'bounding', 'pred_bounding' 'ego']
+    sub_directories = ['cameras', 'pointcloud', 'bounding', 'pred_bounding', 'ego']
     try:
         parent_path = os.path.join(path, name)
         os.makedirs(parent_path, exist_ok=True)
