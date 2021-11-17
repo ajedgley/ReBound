@@ -100,15 +100,11 @@ def setup_rgb(frame, lct_path):
     camera_data_ext = {}
 
     # We get the camera names and their intrinsic data
-    frame_dict = frame_utils.convert_frame_to_dict(frame)
-    for trinsic_data in frame_dict.keys():
+    for c in frame.context.camera_calibrations:
 
         # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
-        if(trinsic_data[-10:] == "_INTRINSIC"):
-            camera_data_int[trinsic_data[:-10]] = frame_dict[trinsic_data].reshape((3, 3)).tolist()
-
-        if(trinsic_data[-10:] == "_EXTRINSIC"):
-            camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
+        camera_data_int[RGB_Name[c.name]] = np.array(c.intrinsic, np.float32).reshape((3, 3)).tolist()
+        camera_data_ext[RGB_Name[c.name]] = np.reshape(np.array(c.extrinsic.transform, np.float32), [4, 4])
     
     for image in frame.images:
         translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[RGB_Name[image.name]].tolist())
