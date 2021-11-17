@@ -36,6 +36,23 @@ def translation_and_rotation(transform_matrix):
     
     return translation, rotation
 
+def print_progress_bar (frame_num, total):
+    """Prints a progress bar
+    Args:
+        frame_num: current frame number
+        total: number of frames
+    Returns:
+        None
+        """
+
+    length = 50
+    filled_length = (length * frame_num//total)
+    bar = '█' * filled_length + '-' * (length - filled_length)
+    print(f'\rConverting data: {bar} {frame_num}/{total} frames converted', end = '\r')
+    # Print New Line on Complete
+    if frame_num == total: 
+        print()
+
 
 #Creates top level lct directory structure at "path"
 def create_lct_directory(path, name):
