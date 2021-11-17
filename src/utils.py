@@ -245,7 +245,6 @@ def create_frame_predicted_directory(path, frame_num, origins, sizes, rotations,
 
     #Create directory that stores the boxes in one frame
     full_path = os.path.join(path, 'pred_bounding', str(frame_num))
-    print(full_path)
     os.mkdir(full_path)
     
     #Create description.json
