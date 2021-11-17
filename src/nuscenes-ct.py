@@ -13,6 +13,7 @@ from nuscenes.nuscenes import NuScenes
 
 from nuscenes.utils.data_classes import LidarPointCloud
 from nuscenes.utils.data_classes import Quaternion
+from nuscenes.utils.data_classes import Box
 
 import numpy as np
 
@@ -81,9 +82,18 @@ def extract_bounding(sample, frame_num, target_path):
     for i in range(0, len(sample['anns']) - 1):
         token = sample['anns'][i]
         annotation_metadata = nusc.get('sample_annotation', token)
-        origins.append(annotation_metadata['translation'])
+        #Create nuscenes box object so we can easily transform this box to the vehicle frame that our dataset requires
+        box = Box(annotation_metadata['translation'], annotation_metadata['size'], Quaternion(annotation_metadata['rotation']))
+        sensor = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
+        poserecord = nusc.get('ego_pose', sensor['ego_pose_token'])
+        
+        box.translate(-np.array(poserecord['translation']))
+        box.rotate(Quaternion(poserecord['rotation']).inverse)
+
+
+        origins.append(box.center.tolist())
         sizes.append(annotation_metadata['size'])
-        rotations.append(annotation_metadata['rotation'])
+        rotations.append(box.orientation.q.tolist())
         annotation_names.append(annotation_metadata['category_name'])
         confidences.append(100)
         
@@ -115,6 +125,9 @@ def extract_lidar(nusc, sample, frame_num, target_path):
     translation = cs_record['translation']
     rotation = cs_record['rotation']
 
+    #Transform points to Vehicle Frame
+    points.rotate(Quaternion(rotation).rotation_matrix)
+    points.translate(translation)
     # Reshape points
     points = np.transpose(points.points[:3, :])
 

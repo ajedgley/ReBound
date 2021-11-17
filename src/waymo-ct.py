@@ -4,6 +4,7 @@ import getopt
 import os
 import utils
 from waymo_open_dataset.utils import frame_utils
+from waymo_open_dataset.utils import transform_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
 import numpy as np

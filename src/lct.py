@@ -13,16 +13,41 @@ from PIL import Image
 import sys
 import io
 import numpy as np
+from numpy import core
 import open3d.visualization.gui as gui
 from PIL import Image
 import open3d as o3d
 import open3d.visualization.rendering as rendering
 import json
 import os
+import cv2
 from nuscenes.utils.data_classes import Box
 from pyquaternion import Quaternion
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility, transform_matrix
 
+from scipy.spatial.transform import Rotation as R
+
+
+def get_3d_box_projected_corners(box_to_image):
+    # Use Box to image transform matrix to transform the vertices of a "unit box" centered at the origin to
+    # Vertices in the rgb camera frame
+    vertices = np.empty([2,2,2,2])
+    for k in [0, 1]:
+        for l in [0, 1]:
+            for m in [0, 1]:
+                # 3D point in the box space
+                v = np.array([(k-0.5), (l-0.5), (m-0.5), 1.])
+
+                # Project the point onto the image
+                v = np.matmul(box_to_image, v)
+
+                # If any of the corner is behind the camera, ignore this object.
+                if v[2] < 0:
+                    return None
+
+                vertices[k,l,m,:] = [v[0]/v[2], v[1]/v[2]]
+    vertices = vertices.astype(np.int32)
+    return vertices
 
 # Parse CLI args and validate input
 def parse_options():
@@ -72,6 +97,7 @@ class Window:
         self.rgb_sensor_name = self.camera_sensors[0]
         self.lidar_sensor_name = self.lidar_sensors[0]
         self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
+        self.pcd_paths = []
         self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "0.jpg")
 
         #We extract any image from LCT in order to get the needed data to create our plt figure
@@ -145,36 +171,61 @@ class Window:
     #Uses nuScenes API to project 3D bounding boxes onto that plt figure
     #Finally, extracts raw image data from plt figure and updates our image widget
     def update_image(self):
-        #Clear axes
         self.ax.clear()
+
+
         #Extract new image from file
         self.image = np.asarray(Image.open(self.image_path))
 
-        #Set image width and height
-
-        #Draw image onto axis
         self.ax.imshow(self.image)
+        #Set image width and height   
         #Figure out which bounding boxes are in our frame
         for box in self.n_boxes:
-            #Translate Box to ego pose
-            box.translate(-np.array(self.frame_extrinsic['translation']))
-            box.rotate(Quaternion(self.frame_extrinsic['rotation']).inverse)
 
-            #Translate Box to sensor pose
-            box.translate(-np.array(self.image_extrinsic['translation']))
-            box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
+            #Calculate Box to Vehicle transform matrix. The box should be in vehicle frame before doing this
+            a = box.orientation.rotation_matrix[0,0] * box.wlh[1]
+            b = -box.orientation.rotation_matrix[0,1] * box.wlh[0]
+            cx = box.center[0]
+            d = box.orientation.rotation_matrix[1,0] * box.wlh[1]
+            e = box.orientation.rotation_matrix[1,1] * box.wlh[0]
+            f = box.wlh[2]
+            gy = box.center[1]
+            gz = box.center[2]
 
-            #Detect if the bounding box is in the view of the camera sensor using box_in_image()
-            if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ALL):
-                #If the box is in view, then render it onto the plt frame
-                box.render(self.ax, np.asarray(self.image_intrinsic['matrix']), normalize=True, colors=['r','r','r'])
+            box_to_vehicle = np.array([
+                [a,b,0,cx],
+                [d,e,0,gy],
+                [0,0,f,gz],
+                [0,0,0,1]
+            ])
 
-        #Extract image with drawn boxes from plt figure
-        self.fig.canvas.draw()
-        self.image = np.frombuffer(self.fig.canvas.tostring_rgb(), dtype=np.uint8)
-        self.image = self.image.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
-        
-        #Set new image data on our image widget
+            #Create Vehicle To RGB sensor pose transform matrix
+            extrinsic = transform_matrix(self.image_extrinsic['translation'], Quaternion(self.image_extrinsic['rotation']))
+            i = self.image_intrinsic['matrix']
+            image_intrinsic = np.array([
+                [i[0][0], 0, i[0][2], 0],
+                [0, i[1][1], i[1][2], 0],
+                [0, 0, 1, 0]])
+            
+            vehicle_to_image = np.matmul(image_intrinsic, np.linalg.inv(extrinsic))
+            
+            #Create Box_to_image matrix that will transform our "Unit Box" to a box in the camera sensor frame
+            box_to_image = np.matmul(vehicle_to_image, box_to_vehicle)
+
+
+            #Call function that returns the vertices of each box in rgb sensor frame
+            vertices = get_3d_box_projected_corners(box_to_image)
+                        
+            #Don't draw the box if it is "None"
+            if vertices is None:
+                continue
+              
+            #Finally, Draw this Box
+            for k in [0, 1]:
+                for l in [0, 1]:
+                    for idx1,idx2 in [((0,k,l),(1,k,l)), ((k,0,l),(k,1,l)), ((k,l,0),(k,l,1))]:
+                        cv2.line(self.image, tuple(vertices[idx1]), tuple(vertices[idx2]), (255,0,0), thickness=3)
+  
         new_image = o3d.geometry.Image(self.image)
         self.image_widget.update_image(new_image)
 
@@ -193,20 +244,20 @@ class Window:
     def update_pointcloud(self):
         self.widget3d.scene.clear_geometry()
         #Add Pointcloud
-        self.pointcloud = o3d.io.read_point_cloud(self.pcd_path)
-        
-        sensor_rotation_matrix = Quaternion(self.pcd_extrinsic['rotation']).rotation_matrix
-        ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
-        
-        #Transform lidar points into vehicle frame
-        self.pointcloud.rotate(sensor_rotation_matrix, [0,0,0])
-        self.pointcloud.translate(self.pcd_extrinsic['translation'])
+        temp_points = np.empty((0,3))
+  
+        for i, pcd_path in enumerate(self.pcd_paths):
+            temp_cloud = o3d.io.read_point_cloud(pcd_path)
+            sensor = self.lidar_sensors[i]
+            #sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
+            ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
 
-        #Transform lidar points into global frame
-        self.pointcloud.rotate(ego_rotation_matrix, [0,0,0])
-        self.pointcloud.translate(self.frame_extrinsic['translation'])
-
-
+            #Transform lidar points into global frame
+            temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
+            temp_cloud.translate(self.frame_extrinsic['translation'])
+            temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
+ 
+        self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
         #Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         
@@ -224,12 +275,14 @@ class Window:
         #Go through each box and render it onto our 3D Widget
         for i in range(0, len(self.boxes['origins'])):
             size = [0,0,0]
-            #We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
-            #in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
+            #Open3D expects LxWxH but we store data in WxLxH so we do this conversion
             size[0] = self.boxes['sizes'][i][1]
             size[1] = self.boxes['sizes'][i][0]
             size[2] = self.boxes['sizes'][i][2]
-            bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], Quaternion(self.boxes['rotations'][i]).rotation_matrix, size)
+
+            bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]), size)
+            bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+            bounding_box.translate(self.frame_extrinsic['translation'])
             self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
         
         #Force our widgets to update
@@ -242,15 +295,17 @@ class Window:
         self.image_extrinsic = json.load(open(os.path.join(self.lct_path, "cameras" , self.rgb_sensor_name, "extrinsics.json")))
         self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
         
-        #Crude way of extracting the sensor pose data from a pcd file
+        
         self.pcd_extrinsic = {}
-        fp = open(os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, str(self.frame_num) + ".pcd"))
-        for i, line in enumerate(fp):
-            if i == 8:
-                vals = line.split()
-                self.pcd_extrinsic['translation'] = [float(vals[1]), float(vals[2]), float(vals[3])]
-                self.pcd_extrinsic['rotation'] = [float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7])]
-        fp.close()
+        for sensor_idx, path in enumerate(self.pcd_paths):
+            fp = open(os.path.join(path))
+            for i, line in enumerate(fp):
+                if i == 8:
+                    vals = line.split()
+                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]] = {}
+                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['translation'] = [float(vals[1]), float(vals[2]), float(vals[3])]
+                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['rotation'] = [float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7])]
+            fp.close()
 
     #Callback function when a user selects a new RGB sensor from the dropdown menu    
     def on_sensor_select(self, new_val, new_idx):
@@ -261,7 +316,9 @@ class Window:
         self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) +".jpg")
     
     def update_pcd_path(self):
-        self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, str(self.frame_num) + ".pcd")
+        self.pcd_paths.clear()
+        for sensor in self.lidar_sensors:
+            self.pcd_paths.append(os.path.join(self.lct_path, "pointcloud", sensor, str(self.frame_num) + ".pcd"))
 
     #Callback function when the user selects a new frame
     def on_frame_switch(self, new_val):
@@ -273,8 +330,8 @@ class Window:
     #Function that updates all displayed data based on the current state of the controls window
     def update(self):
         self.update_image_path()
-        self.update_poses()
         self.update_pcd_path()
+        self.update_poses()
         self.update_bounding()
         self.update_image()
         self.update_pointcloud()
