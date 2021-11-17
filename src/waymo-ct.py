@@ -74,9 +74,20 @@ def extract_rgb(output_path, waymo_path):
         # finally, with all that settled, let's create the directory and files:
         for image in frame.images:
             if (frame_num == 0):
-                translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
+                #Transfer camera transform matrix to standard axes
+                axes_transformation = np.array([
+                [0,-1,0,0],
+                [0,0,-1,0],
+                [1,0,0,0],
+                [0,0,0,1]])
+
+                axes_transformation = np.linalg.inv(axes_transformation)
+                transform_matrix = np.matmul(camera_data_ext[Name[image.name]], axes_transformation)
+                camera_data_ext[Name[image.name]]
+                translation, rotation_quats = utils.translation_and_rotation(transform_matrix.tolist())
                 utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats,
                 camera_data_int[Name[image.name]])
+
             utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
         frame_num += 1
 
@@ -119,8 +130,7 @@ def extract_bounding(frame, frame_num, lct_path):
     annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
     confidences = []
     for label in frame.laser_labels:
-        origins.append(np.transpose(np.matmul(np.array(frame.pose.transform).reshape((4, 4)), np.array(
-            [[label.box.center_x], [label.box.center_y], [label.box.center_z], [1]]))).tolist()[0][:3])
+        origins.append([[label.box.center_x], [label.box.center_y], [label.box.center_z]])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)

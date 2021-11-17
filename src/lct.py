@@ -29,8 +29,8 @@ from scipy.spatial.transform import Rotation as R
 
 
 def get_3d_box_projected_corners(box_to_image):
-    # Loop through the 8 corners constituting the 3D box
-    # and project them onto the image
+    # Use Box to image transform matrix to transform the vertices of a "unit box" centered at the origin to
+    # Vertices in the rgb camera frame
     vertices = np.empty([2,2,2,2])
     for k in [0, 1]:
         for l in [0, 1]:
@@ -46,10 +46,6 @@ def get_3d_box_projected_corners(box_to_image):
                     return None
 
                 vertices[k,l,m,:] = [v[0]/v[2], v[1]/v[2]]
-    #TODO: The fact that we truncate our coordinates is adding quite a bit of error
-    # We should migrate our code back to using plt, or figure out a way of making opencv more accurate
-    # I could also be misunderstanding how opencv works, these coordinates could be pixels, in which case
-    # We can't really do much about it. 
     vertices = vertices.astype(np.int32)
     return vertices
 
@@ -187,36 +183,13 @@ class Window:
         #Set image width and height   
         #Figure out which bounding boxes are in our frame
         for box in self.n_boxes:
-            #print(box.orientation.rotation_matrix)
-            #print(box.wlh)
-            
-            #If we are using waymo, the box rotation matrix is already in vehicle
-            original_matrix = box.orientation.rotation_matrix
-            #Boxes start out in global frame, so translate them to vehicle frame
 
-            
-            """Right now our problem is that Waymo box origins are stored in global, while their rotations are still in vehicle frame
-                While for nuscenes, both rotation and origins are stored in global
-                
-                We should choose to store both in vehicle frame
-                
-            """
-
-
-            box.translate(-np.array(self.frame_extrinsic['translation']))
-            box.rotate(Quaternion(self.frame_extrinsic['rotation']).inverse)
-            #Calculate Box Transformation Matrix
-
-
-            #If we are using nuscenes, we create our box transform matrix after we have moved everything to vehicle frame
-            original_matrix = box.orientation.rotation_matrix
-            
-            #Calculate Box to Vehicle. The box should be in vehicle frame before doing this
-            a = original_matrix[0,0] * box.wlh[1]
-            b = -original_matrix[0,1] * box.wlh[0]
+            #Calculate Box to Vehicle transform matrix. The box should be in vehicle frame before doing this
+            a = box.orientation.rotation_matrix[0,0] * box.wlh[1]
+            b = -box.orientation.rotation_matrix[0,1] * box.wlh[0]
             cx = box.center[0]
-            d = original_matrix[1,0] * box.wlh[1]
-            e = original_matrix[1,1] * box.wlh[0]
+            d = box.orientation.rotation_matrix[1,0] * box.wlh[1]
+            e = box.orientation.rotation_matrix[1,1] * box.wlh[0]
             f = box.wlh[2]
             gy = box.center[1]
             gz = box.center[2]
@@ -227,31 +200,22 @@ class Window:
                 [0,0,f,gz],
                 [0,0,0,1]
             ])
+
+            #Create Vehicle To RGB sensor pose transform matrix
             extrinsic = transform_matrix(self.image_extrinsic['translation'], Quaternion(self.image_extrinsic['rotation']))
             i = self.image_intrinsic['matrix']
-            #print("INTRINSIC MATRIX")
-            #print(i)
             image_intrinsic = np.array([
                 [i[0][0], 0, i[0][2], 0],
                 [0, i[1][1], i[1][2], 0],
                 [0, 0, 1, 0]])
             
-            axes_transformation = np.array([
-                [0,-1,0,0],
-                [0,0,-1,0],
-                [1,0,0,0],
-                [0,0,0,1]])
-
-
-            #HERE IS WHERE THE DIFFERENCE BETWEEN WAYMO AND NUSCENES IS MADE!!!!
             vehicle_to_image = np.matmul(image_intrinsic, np.linalg.inv(extrinsic))
-            #np.matmul(axes_transformation, np.linalg.inv(extrinsic)))
-            #print(image_intrinsic)
-            #print(extrinsic)
-            #print(vehicle_to_image)
             
-            #At this point we can use box_to_vehicle and vehicle_to_image to put boxes in the 2d image frame
+            #Create Box_to_image matrix that will transform our "Unit Box" to a box in the camera sensor frame
             box_to_image = np.matmul(vehicle_to_image, box_to_vehicle)
+
+
+            #Call function that returns the vertices of each box in rgb sensor frame
             vertices = get_3d_box_projected_corners(box_to_image)
                         
             #Don't draw the box if it is "None"
@@ -290,14 +254,6 @@ class Window:
             #sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
             ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
 
-
-
-            #Transform lidar points into vehicle frame
-
-            #We dont do this anymore since we now store all points in vehicle frame
-            #temp_cloud.rotate(sensor_rotation_matrix, [0,0,0])
-            #temp_cloud.translate(self.pcd_extrinsic[sensor]['translation'])
-
             #Transform lidar points into global frame
             temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
             temp_cloud.translate(self.frame_extrinsic['translation'])
@@ -321,18 +277,14 @@ class Window:
         #Go through each box and render it onto our 3D Widget
         for i in range(0, len(self.boxes['origins'])):
             size = [0,0,0]
-            #We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
-            #in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
+            #Open3D expects LxWxH but we store data in WxLxH so we do this conversion
             size[0] = self.boxes['sizes'][i][1]
             size[1] = self.boxes['sizes'][i][0]
             size[2] = self.boxes['sizes'][i][2]
 
-            #print(o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]))
             bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]), size)
-            
-            #This transforms the box from vehicle frame to global frame, so for nuscenes this breaks it since the boxes are already vehicle frame
-            #If we do choose to store boxes in vehicle frame, the we would need to add a translation for the box. R
-            bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix)
+            bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+            bounding_box.translate(self.frame_extrinsic['translation'])
             self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
         
         #Force our widgets to update
