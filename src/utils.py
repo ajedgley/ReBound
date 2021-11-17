@@ -36,7 +36,7 @@ def translation_and_rotation(transform_matrix):
     
     return translation, rotation
 
-def print_progress_bar (frame_num, total):
+def print_progress_bar(frame_num, total):
     """Prints a progress bar
     Args:
         frame_num: current frame number
