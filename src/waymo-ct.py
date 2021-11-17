@@ -10,7 +10,7 @@ from waymo_open_dataset import dataset_pb2 as open_dataset
 import numpy as np
 import PIL
 import io
-
+from pyquaternion import Quaternion
 
 # Name of all the RGB cameras
 RGB_Name  = {
@@ -79,13 +79,12 @@ def extract_bounding(frame, frame_num, lct_path):
     confidences = []
 
     for label in frame.laser_labels:
-        origins.append(np.transpose(np.matmul(np.array(frame.pose.transform).reshape((4, 4)), np.array(
-            [[label.box.center_x], [label.box.center_y], [label.box.center_z], [1]]))).tolist()[0][:3])
+        origins.append([[label.box.center_x], [label.box.center_y], [label.box.center_z]])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
-        rotations.append([0,0,0,0])
+        quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)
+        rotations.append(quat.q.tolist())
         confidences.append(100)
-
     utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
 def setup_rgb(frame, lct_path):
@@ -104,11 +103,19 @@ def setup_rgb(frame, lct_path):
     for c in frame.context.camera_calibrations:
 
         # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
-        camera_data_int[RGB_Name[c.name]] = np.array(c.intrinsic, np.float32).reshape((3, 3)).tolist()
+        matrix = np.array(c.intrinsic, np.float32).tolist()
+        camera_data_int[RGB_Name[c.name]] = [[matrix[0],0,matrix[2]],[0, matrix[1], matrix[3]],[0,0,1]]
         camera_data_ext[RGB_Name[c.name]] = np.reshape(np.array(c.extrinsic.transform, np.float32), [4, 4])
     
     for image in frame.images:
-        translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[RGB_Name[image.name]].tolist())
+        axes_transformation = np.array([
+                [0,-1,0,0],
+                [0,0,-1,0],
+                [1,0,0,0],
+                [0,0,0,1]])
+        axes_transformation = np.linalg.inv(axes_transformation)
+        transform_matrix = np.matmul(camera_data_ext[RGB_Name[image.name]], axes_transformation)
+        translation, rotation_quats = utils.translation_and_rotation(transform_matrix.tolist())
         utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
 
 def extract_rgb(frame, frame_num, lct_path):
@@ -205,13 +212,13 @@ if __name__ == "__main__":
 
         if frame_num == 0:
             setup_rgb(frame, output_path)
-            setup_lidar(frame, output_path, translations, rotations)
+            #setup_lidar(frame, output_path, translations, rotations)
         
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame, frame_num, output_path)
-        extract_rgb(frame, frame_num, output_path)
-        extract_lidar(frame, frame_num, output_path, translations, rotations)
-        extract_ego(frame, frame_num, output_path)
+        #extract_bounding(frame, frame_num, output_path)
+        #extract_rgb(frame, frame_num, output_path)
+        #extract_lidar(frame, frame_num, output_path, translations, rotations)
+        #extract_ego(frame, frame_num, output_path)
         
 
     
