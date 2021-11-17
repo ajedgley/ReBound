@@ -5,11 +5,13 @@ Conversion tool to bring nuscenes dataset into LVT.
 """
 
 import getopt
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import time
 import queue
 from enum import Enum
 from PIL import Image
+from random import randint
 import sys
 import io
 import numpy as np
@@ -62,7 +64,7 @@ class Window:
         np.set_printoptions(precision=15)
 
         #Create the objects for the 3 windows that appear when running the application
-        self.controls = gui.Application.instance.create_window("LCT", 400, 768)
+        self.controls = gui.Application.instance.create_window("LCT", 400, 400)
         self.pointcloud_window = gui.Application.instance.create_window("PointCloud", 640, 480)
         self.image_window = gui.Application.instance.create_window("Image", 640, 480)
 
@@ -76,9 +78,11 @@ class Window:
 
         self.box_data_name = "bounding"
         
-        #These two values represent the current Lidar and RGB sensors being displayed
+        #These three values represent the current Lidar, RGB sensors, and annotations being displayed
         self.rgb_sensor_name = self.camera_sensors[0]
         self.lidar_sensor_name = self.lidar_sensors[0]
+        self.filter_arr = []
+        self.color_map = {}
         self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
         self.pcd_paths = []
         self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "0.jpg")
@@ -96,8 +100,11 @@ class Window:
 
 
         self.frame_num = 0
-        #Dict that stores the imported JSON file that respresents the annoations in the current frame
-        self.boxes = {}
+        #Dict that stores the imported JSON file that respresents the annotations in the current frame
+        self.boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+        #Num of frames available
+        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+        self.num_frames = len(frames_available)
         #List to store boxes as NuScenes Box Objects
         self.n_boxes = []
 
@@ -124,13 +131,32 @@ class Window:
             sensor_select.add_item(cam)
         sensor_select.set_on_selection_changed(self.on_sensor_select)
 
+        #Set up checkboxes for selecting annotations
+        #Have to go through each frame to have all possible annotations available
+        check_boxes = []
+        for i in range(0, self.num_frames):
+            boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(i), "boxes.json")))
+            for annotation in boxes['annotations']:
+                if annotation not in self.color_map:
+                    check = gui.Checkbox(annotation)
+                    check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
+                    check_boxes.append(check)
+                    self.color_map[annotation] = (randint(0, 255), randint(0, 255), randint(0, 255))
+        
         #Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
         sensor_switch_layout.add_child(gui.Label("Switch RGB Sensor"))
         sensor_switch_layout.add_child(sensor_select)
+
+        #Vertical widget for inserting checkboxes
+        checkbox_layout = gui.Vert()
+        checkbox_layout.add_child(gui.Label("Filter annotations"))
+        for box in check_boxes:
+            checkbox_layout.add_child(box)
        
         #Set up widget to switch between frames
         frame_select = gui.NumberEdit(gui.NumberEdit.INT)
+        frame_select.set_limits(0, self.num_frames)
         frame_select.set_on_value_changed(self.on_frame_switch)
         
         #Add frame switching widget to another horizontal widget
@@ -148,10 +174,11 @@ class Window:
         bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
         bounding_toggle_layout.add_child(bounding_toggle)
 
-        #Add our two horizontal widgets to the vertical widget
+        #Add our widgets to the vertical widget
         layout.add_child(sensor_switch_layout)
         layout.add_child(frame_switch_layout)
         layout.add_child(bounding_toggle_layout)
+        layout.add_child(checkbox_layout)
 
         #Add the master widgets to our three windows
         cw.add_child(layout)
@@ -170,42 +197,46 @@ class Window:
 
         #Set image width and height   
         #Figure out which bounding boxes are in our frame
-        for box in self.n_boxes:
+        for i in range(0, len(self.n_boxes)):
+            #Make sure annotation matches the filter
+            if len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr:
+                box = self.n_boxes[i]
+                color = self.color_map[self.boxes['annotations'][i]]
 
-            #Box is stored in vehicle frame, so transform it to rgb sensor frame
-            box.translate(-np.array(self.image_extrinsic['translation']))
-            box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
-            
-            if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
-                #If the box is in view, then render it onto the plt frame
-                corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
-                def draw_rect(selected_corners, color):
-                    prev = selected_corners[-1]
-                    for corner in selected_corners:
+                #Box is stored in vehicle frame, so transform it to rgb sensor frame
+                box.translate(-np.array(self.image_extrinsic['translation']))
+                box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
+                
+                if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
+                    #If the box is in view, then render it onto the plt frame
+                    corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
+                    def draw_rect(selected_corners, c):
+                        prev = selected_corners[-1]
+                        for corner in selected_corners:
+                            cv2.line(self.image,
+                                    (int(prev[0]), int(prev[1])),
+                                    (int(corner[0]), int(corner[1])),
+                                    c, 2)
+                            prev = corner
+
+                    # Draw the sides
+                    for i in range(4):
                         cv2.line(self.image,
-                                (int(prev[0]), int(prev[1])),
-                                (int(corner[0]), int(corner[1])),
+                                (int(corners.T[i][0]), int(corners.T[i][1])),
+                                (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
                                 color, 2)
-                        prev = corner
 
-                # Draw the sides
-                for i in range(4):
+                    # Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
+                    draw_rect(corners.T[:4], color)
+                    draw_rect(corners.T[4:], color)
+
+                    # Draw line indicating the front
+                    center_bottom_forward = np.mean(corners.T[2:4], axis=0)
+                    center_bottom = np.mean(corners.T[[2, 3, 7, 6]], axis=0)
                     cv2.line(self.image,
-                            (int(corners.T[i][0]), int(corners.T[i][1])),
-                            (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
-                            (255, 0, 0), 2)
-
-                # Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
-                draw_rect(corners.T[:4], (255, 0, 0))
-                draw_rect(corners.T[4:], (255, 0, 0))
-
-                # Draw line indicating the front
-                center_bottom_forward = np.mean(corners.T[2:4], axis=0)
-                center_bottom = np.mean(corners.T[[2, 3, 7, 6]], axis=0)
-                cv2.line(self.image,
-                        (int(center_bottom[0]), int(center_bottom[1])),
-                        (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
-                        (0, 0, 255)[::-1], 2)
+                            (int(center_bottom[0]), int(center_bottom[1])),
+                            (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
+                            color, 2)
 
         new_image = o3d.geometry.Image(self.image)
         self.image_widget.update_image(new_image)
@@ -254,17 +285,23 @@ class Window:
         
         
         #Go through each box and render it onto our 3D Widget
+        #Only render box if it matches the filtering criteria
         for i in range(0, len(self.boxes['origins'])):
-            size = [0,0,0]
-            #Open3D expects LxWxH but we store data in WxLxH so we do this conversion
-            size[0] = self.boxes['sizes'][i][1]
-            size[1] = self.boxes['sizes'][i][0]
-            size[2] = self.boxes['sizes'][i][2]
+            if len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr:
+                size = [0,0,0]
+                #We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
+                #in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
+                size[0] = self.boxes['sizes'][i][1]
+                size[1] = self.boxes['sizes'][i][0]
+                size[2] = self.boxes['sizes'][i][2]
 
-            bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], o3d.geometry.get_rotation_matrix_from_quaternion(self.boxes['rotations'][i]), size)
-            bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-            bounding_box.translate(self.frame_extrinsic['translation'])
-            self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
+                color = self.color_map[self.boxes['annotations'][i]]
+                bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], Quaternion(self.boxes['rotations'][i]).rotation_matrix, size)
+                bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+                bounding_box.translate(self.frame_extrinsic['translation'])
+                hex = '#%02x%02x%02x' % color #bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+                bounding_box.color = matplotlib.colors.to_rgb(hex)
+                self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
         
         #Force our widgets to update
         self.widget3d.force_redraw()
@@ -293,6 +330,21 @@ class Window:
         self.rgb_sensor_name = new_val
         self.update()
 
+    #This creates a new function for every annotation value, so the annotation name can be 
+    #passed through
+    def make_on_check(self, annotation, func):
+        def on_checked(checked):
+            func(annotation, checked)
+        return on_checked
+
+    #Callback function when a user checks or unchecks an annotation filter
+    def on_filter_check(self, annotation, checked):
+        if checked:
+            self.filter_arr.append(annotation)
+        else:
+            self.filter_arr.remove(annotation)
+        self.update()
+
     def update_image_path(self):
         self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) +".jpg")
     
@@ -303,10 +355,11 @@ class Window:
 
     #Callback function when the user selects a new frame
     def on_frame_switch(self, new_val):
-        #Set new frame value
-        self.frame_num = int(new_val)
-        #Update Bounding Box List
-        self.update()
+        if int(new_val) >= 0 and int(new_val) < self.num_frames:
+            #Set new frame value
+            self.frame_num = int(new_val)
+            #Update Bounding Box List
+            self.update()
 
     def toggle_bounding(self, new_val, new_idx):
         if new_val == "Predicted":
