@@ -212,13 +212,13 @@ if __name__ == "__main__":
 
         if frame_num == 0:
             setup_rgb(frame, output_path)
-            #setup_lidar(frame, output_path, translations, rotations)
+            setup_lidar(frame, output_path, translations, rotations)
         
         #At this point have one frame imported as 'frame'
-        #extract_bounding(frame, frame_num, output_path)
-        #extract_rgb(frame, frame_num, output_path)
-        #extract_lidar(frame, frame_num, output_path, translations, rotations)
-        #extract_ego(frame, frame_num, output_path)
+        extract_bounding(frame, frame_num, output_path)
+        extract_rgb(frame, frame_num, output_path)
+        extract_lidar(frame, frame_num, output_path, translations, rotations)
+        extract_ego(frame, frame_num, output_path)
         
 
     
