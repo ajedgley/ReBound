@@ -4,22 +4,22 @@
 ### Prerequistes
 LiDAR Visualization Tool runs on a Linux system, so you'll need to set up a system if you have a different operating system.
 We have 3 ways for you to set up a system.
-1. Dual-boot your system for better processing power.
-2. Set-up a GUI-based virtual machine.
+1. **Dual-boot your system for better processing power.**
+2. **Set-up a GUI-based virtual machine.**
 
     We used [VMware](https://www.vmware.com/) to set-up our virtual machine. 
 
-3. SSH into a virtual machine
+3. **SSH into a virtual machine**
     
     Download [RealVNC](https://www.realvnc.com/en/connect/download/viewer/) for your specific operating system and follow the instructions in the setup wizard.
 
-    SSH into the virtual machine in a terminal (password: 5OFZJGWDWWLMY)
+    SSH into the virtual machine in a terminal (password: check SVN)
     ```sh
     ssh cmsc435@vodaphone.cs.umd.edu
     ```
     Run the script `./vc` to create a console handler on the host
 
-    Add a connection in VNC Viewer to `vodaphone.cs.umd.edu:6` (password: 5OFZJGWDWWLMY)
+    Add a connection in VNC Viewer to `vodaphone.cs.umd.edu:6` (password: check SVN)
 
     Now you have a running virtual machine. After closing the machine, use `./vk` to kill the console handler.
 
