@@ -191,7 +191,26 @@ def extract_lidar(nusc, sample, frame_num, target_path):
 
     utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
 
-        
+def count_frames(nusc, sample):
+    """counts frames to use for progress bar
+    Args:
+        nusc: NuScenes api object
+        dataset: nuscenes dataset
+    Returns:
+        frame_count: number of frames
+        """
+    frame_count = 0
+
+    #This prevents our function from modifying the sample
+    if sample['next'] != '':
+        frame_count += 1
+        sample_counter = nusc.get('sample', sample['next'])
+
+    while sample_counter['next'] != '':
+        frame_count += 1
+        sample_counter = nusc.get('sample', sample_counter['next'])
+    return frame_count
+   
     
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
@@ -239,7 +258,12 @@ if __name__ == "__main__":
     utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
 
     if pred_path != "":
+        print('Extracting predicted bounding boxes...')
         extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path)
+    
+    #Setup progress bar
+    frame_count = count_frames(dataset)
+    utils.print_progress_bar(0, frame_count)
 
     #Extract sample data from scene
     while sample['next'] != '':
@@ -250,3 +274,4 @@ if __name__ == "__main__":
         extract_lidar(nusc, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
+        utils.print_progress_bar(frame_num, frame_count)
