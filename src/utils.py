@@ -11,47 +11,30 @@ from shutil import copyfile
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
 
-#Takes a 1x16 list representing a 4x4 rotation matrix
-#Returns a 1x3 translation vector and a 1x4 rotation quaternion
+
 def translation_and_rotation(transform_matrix):
+    """Converts tranformation matrix to a translation and rotation our conversion scripts can use
+    Args:
+        transform_matrix: 1x16 list representing a 4x4 transform matrix
+    
+    Returns:
+        translation: 1x3 translation vector
+        rotation: 1x4 rotation quaternion
+    """
 
     transform_array = np.array(transform_matrix).reshape(4, 4)
 
     #Extract the first 3 entries in the last column as the translation
-    translation = tuple(transform_array[:-1, -1])
+    translation = tuple(transform_array[:3, -1])
 
     #Extract the 3x3 rotation matrix from the upper left
-    rotation_matrix = transform_array[:-1, :-1]
+    rotation_matrix = transform_array[:3, :3]
 
-    #Next, convert the 3x3 matrix into quaternions:
-    (eigenvalues, eigenvectors) = np.linalg.eig(rotation_matrix)
-    
-    #Find the eigenvector with eigenvalue 1, which is guaranteed to exist
-    for i in range(3):
-        if np.isclose(eigenvalues[i], 1):
-            eigenu = eigenvectors[:,i]
-
-    #Check whether sin(theta/2) is positive or negative
-    not_parallel = [1, 1, 1] if eigenu[0]*eigenu[1] < 0 else [1, -1, 1]
-    orthogonal = np.cross(eigenu, not_parallel)
-    sign_check = np.dot(np.cross(orthogonal, np.dot(rotation_matrix, orthogonal)), eigenu)
-    sine_sign = 1 if (sign_check > 0) else -1
-
-    #Calculated trig functions for the quaternion
-    trace = np.trace(rotation_matrix)
-    cos_theta = (trace - 1) / 2
-    sine_half_theta = sine_sign*((1 - cos_theta)/ 2)**0.5
-    cos_half_theta = ((1 + cos_theta)/ 2)**0.5
-
-    #rotation = (sine_half_theta * eigenu[0].real, sine_half_theta * eigenu[1].real, sine_half_theta * eigenu[2].real, cos_half_theta)
-    #rotation = (sine_half_theta * eigenu[1].real, sine_half_theta * eigenu[2].real, cos_half_theta, sine_half_theta * eigenu[0].real)
-
-   
+    #Convert rotation matrix to a quaternion
     quat = R.from_matrix(rotation_matrix)
     rotation = (quat.as_quat()[3], quat.as_quat()[0], quat.as_quat()[1], quat.as_quat()[2])
-
+    
     return translation, rotation
-
 
 
 #Creates top level lct directory structure at "path"
@@ -66,11 +49,11 @@ def create_lct_directory(path, name):
     sub_directories = ['cameras', 'pointcloud', 'bounding', 'ego']
     try:
         parent_path = os.path.join(path, name)
-        os.makedirs(parent_path)
+        os.makedirs(parent_path, exist_ok=True)
         print("added new folder")
         for directory in sub_directories:
             full_path = os.path.join(parent_path, directory)
-            os.mkdir(full_path)
+            os.makedirs(full_path, exist_ok=True)
     except OSError as error:
         print(error)
         sys.exit(1)
@@ -87,18 +70,10 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         None
         """
 
-    #Create necessary directories: ./Cameras and ./Cameras/[name]. These directories are needed for the
-    #file, so the program creates them.
-    try:
-        os.mkdir(os.path.join(path, "cameras"))
-    except FileExistsError:
-        pass
-    
-    work_dir = os.path.join(os.path.join(path, "cameras"), name)
-    try:
-        os.mkdir(work_dir)
-    except FileExistsError:
-        pass
+    #Create necessary directory: ./Cameras/[name]
+    work_dir = os.path.join(path, "cameras", name)
+
+    os.makedirs(work_dir, exist_ok=True)
 
     #Creates the Extrinsic.json file in the /Cameras/[name] directory from the
     #translation and rotation parameters.
@@ -106,59 +81,60 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     extrinsics['translation'] = translation
     extrinsics['rotation'] = rotation
 
-
-    extrinsic_file = open(work_dir + "/extrinsics.json", "w")
-    extrinsic_file.write(json.dumps(extrinsics))
-    extrinsic_file.close()
-
+    with open(work_dir + "/extrinsics.json", "w") as extrinsic_file:
+        extrinsic_file.write(json.dumps(extrinsics))
 
     #Creates the Extrinsic.json file in the /Cameras/[name] directory from the intrinsic parameter.
-    intrinsic_file = open(work_dir + "/intrinsics.json", "w")
-    intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
-    intrinsic_file.close()
+    with open(work_dir + "/intrinsics.json", "w") as intrinsic_file:
+        intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
 
 
-def add_rgb_frame(path, name, image, frame):
+def add_rgb_frame(path, name, image, frame_num):
     """Adds one jpg from one frame to the structure inside the camera directory for a given sensor
     Args:
         path: path to LCT directory
         name: name of RGB sensor
         images: list of buffers containing JPG images (assumed that length of list is also number of frames)
-        frame: the number corresponding to the frame
+        frame_num: the number corresponding to the frame
     Returns:
         None
         """
 
     #Assumes directory exists
     image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
-    str(frame) +".jpg"))
+    str(frame_num) +".jpg"))
 
-def add_rgb_frame_from_jpg(path, name, frame, input_path):
+def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     """Copies existing jpg file into the cameras directory
     Args:
         path: path to LCT directory
         name: name of RGB sensor
-        frame: the number corresponding to the frame
+        frame_num: the number corresponding to the frame
         input_path: Path to source jpg iamge
     Returns:
         None
         """
-    full_path = os.path.join(path, 'cameras', name, str(frame) + '.jpg')
+    full_path = os.path.join(path, 'cameras', name, str(frame_num) + '.jpg')
     copyfile(input_path, full_path)
 
 def create_lidar_sensor_directory(path, name):
+    """Creates directory for one LiDAR sensor
+    Args:
+        path: path to LCT directory
+        name: name of RGB sensor
+    Returns:
+        None
+        """
+
     full_path = os.path.join(path, 'pointcloud', name)
+    os.makedirs(full_path, exist_ok=True)
 
-    try:
-        os.makedirs(full_path)
-    except FileExistsError:
-        pass
-
-def add_lidar_frame(path, name, frame, points, translation, rotation):
+def add_lidar_frame(path, name, frame_num, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
+        frame_num: frame number
         points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
         translation: (x,y,z) tuple representing sensor translation
         rotation: (w,x,y,z) quaternion representing sensor rotation
@@ -179,24 +155,23 @@ def add_lidar_frame(path, name, frame, points, translation, rotation):
     
     pcd_str = '\n'.join(pcd_lines)
 
-    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
+    full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     
-    f = open(full_path, 'w')
-    f.write(pcd_str)
-    f.close()
+    with open(full_path, 'w') as f:
+        f.write(pcd_str)
 
-def add_lidar_frame_from_pcd(path, name, frame, input_path):
+def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     """Copies one .pcd file to pointcloud directory
     Args:
         path: path to LCT directory
         name: name of lidar sensor
+        frame_num: frame number
         input_path: path to .pcd file
     Returns:
         None
         """
     
-    full_path = os.path.join(path, 'pointcloud', name, str(frame) + '.pcd')
-
+    full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     copyfile(input_path, full_path)
 
 def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences):
@@ -223,7 +198,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
 
     #Create directory that stores the boxes in one frame
     full_path = os.path.join(path, 'bounding', str(frame_num))
-    os.mkdir(full_path)
+    os.makedirs(full_path, exist_ok=True)
     
     #Create description.json
     description = {}
@@ -242,6 +217,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
     box_data['rotations'] = rotations
     box_data['annotations'] = annotation_names
     box_data['confidences'] = confidences
+
     with open(json_path, 'w') as f:
         json.dump(box_data, f)
 
@@ -263,6 +239,7 @@ def create_ego_directory(path, frame, translation, rotation):
     ego_data = {}
     ego_data['translation'] = translation
     ego_data['rotation'] = rotation
+
     with open(json_path, 'w') as f:
         json.dump(ego_data, f)
 
@@ -273,7 +250,7 @@ def is_lct_directory(path):
     Args:
         path: path to LCT directory
     Returns:
-        Boolean: True or False
+        is_verified: True if LCT directory is valid or False if not
     """
 
     #individual verification bools
@@ -308,11 +285,16 @@ def is_lct_directory(path):
     return is_verified
 
 
-#Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
-#Parameter is the path to the cameras dir
-#Returns false if not valid and true otherwise
-#Will print out reason for invalidity if one exists
+
 def check_inside_cameras(path):
+    """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
+    Prints out reason for invalidity if one exists
+    Args:
+        path: path to LCT directory
+    Returns:
+        is_verified: false if not valid and true otherwise
+    """
+
     is_verified = True
     
     #cameras
@@ -343,10 +325,15 @@ def check_inside_cameras(path):
     return is_verified
 
 
-#Checks to make sure that all the subdirectories of cameras only have .pcd files
-#Returns false if not valid and true otherwise
-#Will print out reason for invalidity if one exists
 def check_inside_pointcloud(path):
+    """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
+    Prints out reason for invalidity if one exists
+    Args:
+        path: path to LCT directory
+    Returns:
+        is_verified: false if not valid and true otherwise
+    """
+
     is_verified = True
 
     for dir in os.listdir(path):

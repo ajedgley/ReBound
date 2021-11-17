@@ -108,8 +108,6 @@ class Window:
         self.fig, self.ax = plt.subplots(figsize=plt.figaspect(self.image))
         self.fig.subplots_adjust(0,0,1,1)
 
-
-
         #Image widget used to draw an image onto our image window
         self.image_widget = gui.ImageWidget()
 
@@ -134,9 +132,9 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.mat = rendering.Material()
-        #self.mat.shader = "defaultUnlit"
-        #self.mat.point_size = 3 * pw.scaling
-        
+        self.mat.shader = "defaultUnlit"
+        self.mat.point_size = 3 * pw.scaling
+
         #Set up drop down menu for switching between RGB sensors
         sensor_select = gui.Combobox()
         for cam in self.camera_sensors:
