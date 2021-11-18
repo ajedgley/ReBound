@@ -195,7 +195,7 @@ def count_frames(nusc, sample):
     """counts frames to use for progress bar
     Args:
         nusc: NuScenes api object
-        dataset: nuscenes dataset
+        sample: nuscenes frame, this should be the first frame
     Returns:
         frame_count: number of frames
         """
@@ -262,7 +262,7 @@ if __name__ == "__main__":
         extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path)
     
     #Setup progress bar
-    frame_count = count_frames(dataset)
+    frame_count = count_frames(nusc, sample)
     utils.print_progress_bar(0, frame_count)
 
     #Extract sample data from scene
