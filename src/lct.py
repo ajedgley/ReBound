@@ -295,10 +295,11 @@ class Window:
     #Updates bounding box information when switching frames
     def update_bounding(self):
         self.boxes = json.load(open(os.path.join(self.lct_path ,self.box_data_name, str(self.frame_num), "boxes.json")))
-        print(self.boxes['origins'][0])
-        self.n_boxes = []
-        for i in range(0, len(self.boxes['origins'])):
-            self.n_boxes.append(Box(self.boxes['origins'][i], self.boxes['sizes'][i], Quaternion(self.boxes['rotations'][i]), name=self.boxes['annotations'][i], score=self.boxes['confidences'][i], velocity=(0,0,0)))
+        if self.boxes['origins']:
+            print(self.boxes['origins'][0])
+            self.n_boxes = []
+            for i in range(0, len(self.boxes['origins'])):
+                self.n_boxes.append(Box(self.boxes['origins'][i], self.boxes['sizes'][i], Quaternion(self.boxes['rotations'][i]), name=self.boxes['annotations'][i], score=self.boxes['confidences'][i], velocity=(0,0,0)))
 
     #Takes new pointcloud data and converts it to global frame
     #Then renders the bounding boxes (Assuming the boxes are already in global frame)
