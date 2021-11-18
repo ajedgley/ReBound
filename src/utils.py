@@ -46,13 +46,17 @@ def print_progress_bar(frame_num, total):
         """
 
     length = 40
+
+    #adjusting size of progress bar
     if os.get_terminal_size()[0] < 50:
         length = 10
     elif os.get_terminal_size()[0] < 70:
         length = 20
+    
     filled_length = (length * frame_num//total)
     bar = '█' * filled_length + '-' * (length - filled_length)
     print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
+    
     # Print New Line on Complete
     if frame_num == total: 
         print()
@@ -326,7 +330,11 @@ def is_lct_directory(path):
     pointcloud_exists = os.path.exists(os.path.join(path, "pointcloud"))
     inside_pointcloud_valid = check_inside_pointcloud(os.path.join(path, "pointcloud"))
     bounding_exists = os.path.exists(os.path.join(path, "bounding"))
+    inside_bounding_valid = check_inside_bounding(os.path.join(path, "bounding"))
     ego_exists = os.path.exists(os.path.join(path, "ego"))
+    inside_ego_valid = check_inside_ego(os.path.join(path, "ego"))
+    predicted_exists = os.path.exists(os.path.join(path, "pred_bounding"))
+
 
     #overall verification bool
     is_verified = True
@@ -345,9 +353,17 @@ def is_lct_directory(path):
     if not bounding_exists:
         print("There is no directory named \"bounding\" at the selected path. \n")
         is_verified = False
+    if not inside_bounding_valid:
+        is_verified = False
     if not ego_exists:
         print("There is no directory named \"ego\" at the selected path. \n")
         is_verified = False
+    if not inside_ego_valid:
+        is_verified = False
+    if not predicted_exists:
+        print("There is no directory named \"pred_bounding\" at the selected path. \n")
+        is_verified = False
+
     
     return is_verified
 
@@ -357,7 +373,7 @@ def check_inside_cameras(path):
     """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to cameras directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
@@ -396,7 +412,7 @@ def check_inside_pointcloud(path):
     """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to pointcloud directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
@@ -412,4 +428,55 @@ def check_inside_pointcloud(path):
     
     return is_verified
 
+def check_inside_bounding(path):
+    """Checks to make sure that all the subdirectories of bounding are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+           path: path to bounding directory
+       Returns:
+           is_verified: false if not valid and true otherwise    
+    """
+    
+    
+    is_verified = True
+
+    #loop through frames
+    for dir in os.listdir(path):
+        has_description = False
+        has_boxes = False
+        #Loop through files in frame
+        for file in os.listdir(os.path.join(path, dir)):
+            if has_boxes and has_description:
+                is_verified = False
+                print("directory " + dir + " has multiple description.JSON/boxes.json files")
+            elif file == "description.json":
+                has_description = True
+            elif file == "boxes.json":
+                has_boxes = True
+            else:
+                is_verified = False
+        
+        if not has_boxes and not has_description:
+            is_verified = False
+            print("There is not a description.json and a boxes.json file in the " + dir + " directory")
+
+    return True
+
+def check_inside_ego(path):
+    """Checks to makes sure that all the subdirectories of ego are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+            path: path to the ego directory
+       Returns: 
+            is_verified: false if not valid and true otherwise 
+    """
+
+    is_verified = True
+
+    for file in os.listdir(path):
+        if not file[-4:] == ".JSON":
+            is_verified = False
+            print("There is a file in the ego directory that is not a json file")
+
+    return is_verified
 
