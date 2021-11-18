@@ -225,21 +225,16 @@ if __name__ == "__main__":
     # If the output directory exists, then use that directory. Otherwise, create a new directory at the
     # specified path. 
 
-
-    #Extract predicted data from pred_path
-   
-    
-    
-
-
-
-    
     validate_io_paths(input_path, output_path)
-    nusc = NuScenes('v1.0-mini', input_path, True)
-
-    
+    nusc = NuScenes('v1.0-mini', input_path, True)  
     nusc.list_scenes()
-    scene_token = nusc.field2token('scene', 'name', scene_name)[0]
+    
+    try:
+        scene_token = nusc.field2token('scene', 'name', scene_name)[0]
+    except:
+        print("\n Not a valid scene name for this dataset!")
+        exit(2)
+    
     scene = nusc.get('scene', scene_token)
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0

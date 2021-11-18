@@ -78,6 +78,7 @@ class Window:
 
         self.box_data_name = "bounding"
         
+        self.min_confidence = 80
         #These three values represent the current Lidar, RGB sensors, and annotations being displayed
         self.rgb_sensor_name = self.camera_sensors[0]
         self.lidar_sensor_name = self.lidar_sensors[0]
@@ -131,17 +132,45 @@ class Window:
             sensor_select.add_item(cam)
         sensor_select.set_on_selection_changed(self.on_sensor_select)
 
-        #Set up checkboxes for selecting annotations
+        #Set up checkboxes for selecting ground truth annotations
         #Have to go through each frame to have all possible annotations available
         check_boxes = []
         for i in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(i), "boxes.json")))
             for annotation in boxes['annotations']:
                 if annotation not in self.color_map:
+                    horiz = gui.Horiz()
                     check = gui.Checkbox(annotation)
                     check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
-                    check_boxes.append(check)
                     self.color_map[annotation] = (randint(0, 255), randint(0, 255), randint(0, 255))
+
+                    #Color Picker
+                    color = gui.ColorEdit()
+                    (r,g,b) = self.color_map[annotation]
+                    color.color_value = gui.Color(r/255,g/255,b/255)
+                    horiz.add_child(check)
+                    horiz.add_child(color)
+                    check_boxes.append(horiz)
+
+
+        #Set up checkboxes for selecting predicted annotations
+        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "pred_bounding"))]
+        self.pred_frames = len(frames_available)
+        pred_check_boxes = []
+        for i in range(0, self.pred_frames):
+            boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(i), "boxes.json")))
+            for annotation in boxes['annotations']:
+                if annotation not in self.color_map:
+                    horiz = gui.Horiz()
+                    check = gui.Checkbox(annotation)
+                    check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
+                    self.color_map[annotation] = (randint(0, 255), randint(0, 255), randint(0, 255))
+                    color = gui.ColorEdit()
+                    (r,g,b) = self.color_map[annotation]
+                    color.color_value = gui.Color(r/255,g/255,b/255)
+                    horiz.add_child(check)
+                    horiz.add_child(color)
+                    pred_check_boxes.append(horiz)
         
         #Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
@@ -150,19 +179,36 @@ class Window:
 
         #Vertical widget for inserting checkboxes
         checkbox_layout = gui.Vert()
-        checkbox_layout.add_child(gui.Label("Filter annotations"))
+        checkbox_layout.add_child(gui.Label("Filter GT annotations"))
         for box in check_boxes:
             checkbox_layout.add_child(box)
+
+        #Vertical widget for inserting predicted checkboxes
+        pred_checkbox_layout = gui.Vert()
+        pred_checkbox_layout.add_child(gui.Label("Filter predicted annotations"))
+        for box in pred_check_boxes:
+            pred_checkbox_layout.add_child(box)
        
         #Set up widget to switch between frames
         frame_select = gui.NumberEdit(gui.NumberEdit.INT)
         frame_select.set_limits(0, self.num_frames)
         frame_select.set_on_value_changed(self.on_frame_switch)
-        
+
         #Add frame switching widget to another horizontal widget
         frame_switch_layout = gui.Horiz()
         frame_switch_layout.add_child(gui.Label("Switch Frame"))
         frame_switch_layout.add_child(frame_select)
+
+        #Set up widget to specify minimum annotation confidence
+        confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
+        confidence_select.set_limits(0,100)
+        confidence_select.set_value(80)
+        confidence_select.set_on_value_changed(self.on_confidence_switch)
+
+        #Add confidence select widget to horizontal
+        confidence_select_layout = gui.Horiz()
+        confidence_select_layout.add_child(gui.Label("Specify Confidence Threshold"))
+        confidence_select_layout.add_child(confidence_select)
 
         #Add combobox to switch between predicted and ground truth
         bounding_toggle = gui.Combobox()
@@ -178,7 +224,9 @@ class Window:
         layout.add_child(sensor_switch_layout)
         layout.add_child(frame_switch_layout)
         layout.add_child(bounding_toggle_layout)
+        layout.add_child(confidence_select_layout)
         layout.add_child(checkbox_layout)
+        layout.add_child(pred_checkbox_layout)
 
         #Add the master widgets to our three windows
         cw.add_child(layout)
@@ -199,7 +247,7 @@ class Window:
         #Figure out which bounding boxes are in our frame
         for i in range(0, len(self.n_boxes)):
             #Make sure annotation matches the filter
-            if len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr:
+            if (len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr) and self.boxes['confidences'][i] >= self.min_confidence:
                 box = self.n_boxes[i]
                 color = self.color_map[self.boxes['annotations'][i]]
 
@@ -287,7 +335,7 @@ class Window:
         #Go through each box and render it onto our 3D Widget
         #Only render box if it matches the filtering criteria
         for i in range(0, len(self.boxes['origins'])):
-            if len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr:
+            if (len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr) and self.boxes['confidences'][i] >= self.min_confidence:
                 size = [0,0,0]
                 #We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
                 #in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
@@ -361,12 +409,18 @@ class Window:
             #Update Bounding Box List
             self.update()
 
+    def on_confidence_switch(self, new_val):
+        if int(new_val) >= 0 and int(new_val) <= 100:
+            self.min_confidence = int(new_val)
+            self.update()
+
     def toggle_bounding(self, new_val, new_idx):
-        if new_val == "Predicted":
+        if new_val == "Predicted" and self.pred_frames > 0:
             self.box_data_name = "pred_bounding"
+            self.update()
         else:
             self.box_data_name = "bounding"
-        self.update()
+            self.update()
     #Function that updates all displayed data based on the current state of the controls window
     def update(self):
         self.update_image_path()
