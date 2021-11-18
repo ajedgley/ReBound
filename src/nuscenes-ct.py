@@ -206,9 +206,9 @@ def count_frames(nusc, sample):
         frame_count += 1
         sample_counter = nusc.get('sample', sample['next'])
 
-    while sample_counter['next'] != '':
-        frame_count += 1
-        sample_counter = nusc.get('sample', sample_counter['next'])
+        while sample_counter['next'] != '':
+            frame_count += 1
+            sample_counter = nusc.get('sample', sample_counter['next'])
     return frame_count
    
     
