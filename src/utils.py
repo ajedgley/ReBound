@@ -46,13 +46,17 @@ def print_progress_bar(frame_num, total):
         """
 
     length = 40
+
+    #adjusting size of progress bar
     if os.get_terminal_size()[0] < 50:
         length = 10
     elif os.get_terminal_size()[0] < 70:
         length = 20
+    
     filled_length = (length * frame_num//total)
     bar = '█' * filled_length + '-' * (length - filled_length)
     print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
+    
     # Print New Line on Complete
     if frame_num == total: 
         print()
@@ -369,7 +373,7 @@ def check_inside_cameras(path):
     """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to cameras directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
@@ -408,7 +412,7 @@ def check_inside_pointcloud(path):
     """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to pointcloud directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
@@ -425,6 +429,15 @@ def check_inside_pointcloud(path):
     return is_verified
 
 def check_inside_bounding(path):
+    """Checks to make sure that all the subdirectories of bounding are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+           path: path to bounding directory
+       Returns:
+           is_verified: false if not valid and true otherwise    
+    """
+    
+    
     is_verified = True
 
     #loop through frames
@@ -450,6 +463,14 @@ def check_inside_bounding(path):
     return True
 
 def check_inside_ego(path):
+    """Checks to makes sure that all the subdirectories of ego are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+            path: path to the ego directory
+       Returns: 
+            is_verified: false if not valid and true otherwise 
+    """
+
     is_verified = True
 
     for file in os.listdir(path):
