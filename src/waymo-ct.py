@@ -4,15 +4,17 @@ import getopt
 import os
 import utils
 from waymo_open_dataset.utils import frame_utils
+from waymo_open_dataset.utils import transform_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
 import numpy as np
 import PIL
 import io
+from pyquaternion import Quaternion
+import concurrent.futures
 
-
-# Name of all the cameras
-Name  = {
+# Name of all the RGB cameras
+RGB_Name  = {
     0:"UNKNOWN",
     1:'FRONT',
     2:'FRONT_LEFT',
@@ -21,54 +23,16 @@ Name  = {
     5:'SIDE_RIGHT'
   }
 
-def extract_rgb(output_path, waymo_path):
+# Name of all LiDAR sensors
+Lidar_Name = {
+    0:"UNKNOWN",
+    1:"TOP",
+    2:"FRONT",
+    3:"SIDE_LEFT",
+    4:"SIDE_RIGHT",
+    5:"REAR"
+}
 
-    """Extracts the RGB data from a waymo tfrecord and converts it into our intermediate format
-    Args:
-        output_path: path to LCT directory
-        waymo_path: path to waymo data
-    Returns:
-        None
-        """
-
-    #Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(waymo_path,'')
-
-    frame_num = 0
-    #Loop through each frame
-    for data in dataset:
-        frame = open_dataset.Frame()
-        frame.ParseFromString(bytearray(data.numpy()))
-        #At this point have one frame imported as 'frame'
-
-        #For the data that's the same in each frame:
-        if(frame_num == 0):
-            camera_data_int = {}
-            camera_data_ext = {}
-            # We get the camera names and their intrinsic data
-            frame_dict = frame_utils.convert_frame_to_dict(frame)
-            for trinsic_data in frame_dict.keys():
-
-                # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
-                if(trinsic_data[-10:] == "_INTRINSIC"):
-                    camera_data_int[trinsic_data[:-10]] = frame_dict[trinsic_data].reshape((3, 3)).tolist()
-
-                if(trinsic_data[-10:] == "_EXTRINSIC"):
-                    camera_data_ext[trinsic_data[:-10]] = frame_dict[trinsic_data]
-
-            
-
-        # finally, with all that settled, let's create the directory and files:
-        for image in frame.images:
-            if (frame_num == 0):
-                translation, rotation_quats = utils.translation_and_rotation(camera_data_ext[Name[image.name]].tolist())
-                utils.create_rgb_sensor_directory(output_path, Name[image.name], translation, rotation_quats,
-                camera_data_int[Name[image.name]])
-            utils.add_rgb_frame(output_path, Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
-        frame_num += 1
-
-        
-    
 
 #Get command line options
 def parse_options():
@@ -99,28 +63,93 @@ def parse_options():
     return (waymo_path, output_path, custom_path)
 
 def extract_bounding(frame, frame_num, lct_path):
+    """Extracts the bounding data from a waymo frame and converts it into our intermediate format
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
+
     origins = []
     sizes = []
     rotations = []
     annotation_names = []
     annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
     confidences = []
+
     for label in frame.laser_labels:
         origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
-        rotations.append([0,0,0,0])
+        quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)
+        rotations.append(quat.q.tolist())
         confidences.append(100)
-    utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes,rotations,annotation_names,confidences)
+    utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
-#Uses the first frame to initialize 
+def setup_rgb(frame, lct_path):
+    """Sets up the RGB directory with extrinsic data
+    Args:
+        frame: waymo frame
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
+
+    camera_data_int = {}
+    camera_data_ext = {}
+
+    # We get the camera names and their intrinsic data
+    for c in frame.context.camera_calibrations:
+
+        # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
+        matrix = np.array(c.intrinsic, np.float32).tolist()
+        camera_data_int[RGB_Name[c.name]] = [[matrix[0],0,matrix[2]],[0, matrix[1], matrix[3]],[0,0,1]]
+        camera_data_ext[RGB_Name[c.name]] = np.reshape(np.array(c.extrinsic.transform, np.float32), [4, 4])
+    
+    for image in frame.images:
+        axes_transformation = np.array([
+                [0,-1,0,0],
+                [0,0,-1,0],
+                [1,0,0,0],
+                [0,0,0,1]])
+        axes_transformation = np.linalg.inv(axes_transformation)
+        transform_matrix = np.matmul(camera_data_ext[RGB_Name[image.name]], axes_transformation)
+        translation, rotation_quats = utils.translation_and_rotation(transform_matrix.tolist())
+        utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
+
+def extract_rgb(frame, frame_num, lct_path):
+    """Extracts the RGB data from a waymo frame and converts it into our intermediate format
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
+
+    #create the directory and files:
+    for image in frame.images:
+        utils.add_rgb_frame(lct_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
+
 def setup_lidar(frame, lct_path, translations, rotations):
+    """Uses the first frame to initialize LiDAR directory and store extrinsic data
+    Args:
+        frame: waymo frame
+        lct_path: path to LCT directory
+        translations: empty translation dictionary
+        rotations: empty rotation dictionary
+    Returns:
+        None
+        """
+
     calibrations = sorted(frame.context.laser_calibrations, key=lambda c: c.name)
     for c in calibrations:
         sensor = c.name
 
         #Set up the folder for each sensor
-        utils.create_lidar_sensor_directory(lct_path, Name[sensor])
+        utils.create_lidar_sensor_directory(lct_path, Lidar_Name[sensor])
         transform_matrix = c.extrinsic.transform
 
         #The transaltion matrices are the same for each frame, so this computation is only run once
@@ -128,9 +157,18 @@ def setup_lidar(frame, lct_path, translations, rotations):
         translations[sensor] = translation
         rotations[sensor] = rotation
 
-#Extracts LiDAR data from one frame and puts it in the lct file system
 def extract_lidar(frame, frame_num, lct_path, translations, rotations):
-    
+    """Extracts LiDAR data from one frame and puts it in the lct file system
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+        lct_path: path to LCT directory
+        translations: translation dictionary
+        rotations: rotation dictionary
+    Returns:
+        None
+        """
+
     #Extract the pointclouds as a list of points
     range_images, camera_projections,range_image_top_pose = frame_utils.parse_range_image_and_camera_projection(frame)
     point_clouds, cp_points = frame_utils.convert_range_image_to_point_cloud(frame,range_images,camera_projections,range_image_top_pose,0,False)
@@ -141,11 +179,31 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
         sensor = i+1
         translation = translations[sensor]
         rotation = rotations[sensor]
-        utils.add_lidar_frame(lct_path, Name[sensor], frame_num, points, translation, rotation)
+        utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translation, rotation)
 
 def extract_ego(frame, frame_num, lct_path):
+    """Extracts ego data from one frame and puts it in the lct file system
+    Args:
+        frame: waymo frame
+        frame_num: frame number
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
     translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
     utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
+
+def count_frames(dataset):
+    """counts frames to use for progress bar
+    Args:
+        dataset: waymo dataset
+    Returns:
+        frame_count: number of frames
+        """
+    frame_count = 0
+    for frame in dataset:
+        frame_count += 1
+    return frame_count
 
 if __name__ == "__main__":
     (waymo_path, output_path, custom_path) = parse_options()
@@ -162,27 +220,45 @@ if __name__ == "__main__":
         utils.create_lct_directory(os.getcwd(), output_path)
 
     #Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(waymo_path,'')
+    dataset = tf.data.TFRecordDataset(waymo_path, '')
 
     #Initialize LiDAR camera dictionarys
     translations = {}
     rotations = {}
 
-    #Extracts RGB data
-    extract_rgb(output_path, waymo_path)
+    frame_count = count_frames(dataset)
+    executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
+    futures = []
 
+    #start progress bar
+    utils.print_progress_bar(0, frame_count)
     #Loop through each frame
-    frame_num = 0
-    for data in dataset:
+    for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
+
         if frame_num == 0:
+            setup_rgb(frame, output_path)
             setup_lidar(frame, output_path, translations, rotations)
+        
         #At this point have one frame imported as 'frame'
-        extract_bounding(frame,frame_num,output_path)
-        extract_lidar(frame, frame_num, output_path, translations, rotations)
-        extract_ego(frame, frame_num, output_path)
+        #extract_bounding(frame, frame_num, output_path)
+        #extract_rgb(frame, frame_num, output_path)
+        #extract_lidar(frame, frame_num, output_path, translations, rotations)
+        #extract_ego(frame, frame_num, output_path)
+
+        #Update progress bar
+        #utils.print_progress_bar(frame_num, frame_count)
+        futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
+        executor.submit(extract_rgb, frame, frame_num, output_path),
+        executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
+        executor.submit(extract_ego, frame, frame_num, output_path)])
+
+    frame_num = 0
+    for frame in futures:
+        concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
         frame_num += 1
+        utils.print_progress_bar(frame_num, frame_count)
         
 
     
