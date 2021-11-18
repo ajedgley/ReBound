@@ -90,18 +90,18 @@ Run this to update the shell
 `output_path` : the directory to output the LVT directory to
 
 `scene_name` : a scene from the dataset to convert
+
+`prediction_path` : a path to a JSON file with the predicted bounding boxes
 ```sh
-python3 nuscenes-ct.py -f [input_path] -o [output_path] -s [scene_name]
+python3 nuscenes-ct.py -f [input_path] -o [output_path] -s [scene_name] -p [prediction_path]
 ```
 ### Converting a Waymo Dataset
 `input_path` : a path to a Waymo TFRecord file
 
 `output_path` : the the directory to output the LVT directory to
 
-`custom_path` (optional): a parent path to place the `output_path` in, defaults to current directory
-
 ```sh
-python3 waymo-ct.py -f [input_path] -o [output_path] -p [custom_path]
+python3 waymo-ct.py -f [input_path] -o [output_path]
 ```
 
 ### Visualizing Data
