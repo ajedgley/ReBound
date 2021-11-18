@@ -8,6 +8,10 @@ We have 3 ways for you to set up a system.
 2. **Set-up a GUI-based virtual machine.**
 
     We used [VMware](https://www.vmware.com/) to set-up our virtual machine. 
+    Check out this [tutorial](https://unixcop.com/how-to-install-ubuntu-21-04-on-vmware-workstation-pro/) that can help with installation. However, here are some notes:
+    * UMD students have access to VMWare through TerpWare for free
+    * We used Ubuntu 20.04 since it includes the correct verion of Python (3.8)
+    * We recommend allocating at least 30 GB of disk space
 
 3. **SSH into a virtual machine**
     
