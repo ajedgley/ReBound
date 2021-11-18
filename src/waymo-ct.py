@@ -43,10 +43,10 @@ def parse_options():
     Args:
         None
     Returns:
-        waymo_path: Path to waymo dataset being read into LVT
+        input_path: Path to waymo dataset being read into LVT
         output_path: Path where user wants LVT to generate generic data format used in program
     """
-    waymo_path = ""
+    input_path = ""
     output_path = ""
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hf:o:", "help")
@@ -60,13 +60,13 @@ def parse_options():
             print("required: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
             sys.exit(2)
         elif opt == "-f":
-            waymo_path = arg
+            input_path = arg
         elif opt == "-o":
             output_path = arg
         else:
             sys.exit(2)
 
-    return (waymo_path, output_path)
+    return (input_path, output_path)
 
 def extract_bounding(frame, frame_num, lct_path):
     """Extracts the bounding data from a waymo frame and converts it into our intermediate format
@@ -217,10 +217,10 @@ def count_frames(dataset):
     return frame_count
 
 if __name__ == "__main__":
-    (waymo_path, output_path) = parse_options()
+    (input_path, output_path) = parse_options()
 
     # Check if path specified is a Waymo dataset file
-    if os.path.splitext(waymo_path)[1] != ".tfrecord":
+    if os.path.splitext(input_path)[1] != ".tfrecord":
         print("The file specified is not a tfrecord")
         sys.exit(2)
 
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     utils.create_lct_directory(os.getcwd(), output_path)
 
     # Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(waymo_path, '')
+    dataset = tf.data.TFRecordDataset(input_path, '')
 
     # Initialize LiDAR camera dictionarys
     translations = {}
