@@ -1,4 +1,8 @@
-#Conversion Script for waymo Dataset
+"""
+waymo-ct.py
+
+Conversion tool for bringing data from the waymo dataset into our generic data format
+"""
 import sys
 import getopt
 import os
@@ -34,13 +38,18 @@ Lidar_Name = {
 }
 
 
-#Get command line options
 def parse_options():
-    waymo_path = ""
+    """Read in user command line input to get directory paths which will be used for input and output.
+    Args:
+        None
+    Returns:
+        input_path: Path to waymo dataset being read into LVT
+        output_path: Path where user wants LVT to generate generic data format used in program
+    """
+    input_path = ""
     output_path = ""
-    custom_path = ""
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hf:o:p:", "help")
+        opts, args = getopt.getopt(sys.argv[1:], "hf:o:", "help")
     except getopt.GetoptError as err:
         print(err)
         sys.exit(2)
@@ -49,18 +58,15 @@ def parse_options():
         if opt in ("-h", "--help"):
             print("required: -f to specify the path to the Waymo file")
             print("required: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
-            print("optional: -p to specify a custom path where the LVT format dataset will go")
             sys.exit(2)
         elif opt == "-f":
-            waymo_path = arg
+            input_path = arg
         elif opt == "-o":
             output_path = arg
-        elif opt == '-p':
-            custom_path = arg
         else:
             sys.exit(2)
 
-    return (waymo_path, output_path, custom_path)
+    return (input_path, output_path)
 
 def extract_bounding(frame, frame_num, lct_path):
     """Extracts the bounding data from a waymo frame and converts it into our intermediate format
@@ -79,12 +85,14 @@ def extract_bounding(frame, frame_num, lct_path):
     annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
     confidences = []
 
+    # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
     for label in frame.laser_labels:
         origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
         sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)
         rotations.append(quat.q.tolist())
+        # Confidence set to 100 by default for ground truth data
         confidences.append(100)
     utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
@@ -100,15 +108,17 @@ def setup_rgb(frame, lct_path):
     camera_data_int = {}
     camera_data_ext = {}
 
-    # We get the camera names and their intrinsic data
+    # Get the camera names and their intrinsic data
     for c in frame.context.camera_calibrations:
 
-        # If we've gotten this far, that means intrinsic_data holds the intrinsic data (and name) of a camera
+        # Store intrinsic and extrinsic data for each camera in a dictionary
         matrix = np.array(c.intrinsic, np.float32).tolist()
         camera_data_int[RGB_Name[c.name]] = [[matrix[0],0,matrix[2]],[0, matrix[1], matrix[3]],[0,0,1]]
         camera_data_ext[RGB_Name[c.name]] = np.reshape(np.array(c.extrinsic.transform, np.float32), [4, 4])
     
+    # Create directory for each camera in scene
     for image in frame.images:
+        # Convert given extrinsic data into format we can use 
         axes_transformation = np.array([
                 [0,-1,0,0],
                 [0,0,-1,0],
@@ -117,6 +127,7 @@ def setup_rgb(frame, lct_path):
         axes_transformation = np.linalg.inv(axes_transformation)
         transform_matrix = np.matmul(camera_data_ext[RGB_Name[image.name]], axes_transformation)
         translation, rotation_quats = utils.translation_and_rotation(transform_matrix.tolist())
+        # Create directory for camera
         utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
 
 def extract_rgb(frame, frame_num, lct_path):
@@ -129,7 +140,7 @@ def extract_rgb(frame, frame_num, lct_path):
         None
         """
 
-    #create the directory and files:
+    # Add image files to respective camera directory
     for image in frame.images:
         utils.add_rgb_frame(lct_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
 
@@ -144,15 +155,16 @@ def setup_lidar(frame, lct_path, translations, rotations):
         None
         """
 
+    # Calibrations are the data which go along with each point cloud for a LiDAR sensor
     calibrations = sorted(frame.context.laser_calibrations, key=lambda c: c.name)
     for c in calibrations:
         sensor = c.name
 
-        #Set up the folder for each sensor
+        # Set up the folder for each sensor
         utils.create_lidar_sensor_directory(lct_path, Lidar_Name[sensor])
         transform_matrix = c.extrinsic.transform
 
-        #The transaltion matrices are the same for each frame, so this computation is only run once
+        # The transaltion matrices are the same for each frame, so this computation is only run once
         translation, rotation = utils.translation_and_rotation(transform_matrix)
         translations[sensor] = translation
         rotations[sensor] = rotation
@@ -169,17 +181,15 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
         None
         """
 
-    #Extract the pointclouds as a list of points
+    # Extract the pointclouds as a list of points
     range_images, camera_projections,range_image_top_pose = frame_utils.parse_range_image_and_camera_projection(frame)
-    point_clouds, cp_points = frame_utils.convert_range_image_to_point_cloud(frame,range_images,camera_projections,range_image_top_pose,0,False)
+    point_clouds, _ = frame_utils.convert_range_image_to_point_cloud(frame,range_images,camera_projections,range_image_top_pose,0,False)
 
-    #There are 5 pointclouds corresponding to the 5 sensors
-    for i in range(len(point_clouds)):
-        points = point_clouds[i]
+    # There are 5 pointclouds corresponding to the 5 sensors
+    for i, points in enumerate(point_clouds):
+        # Sensor numbers are indexed from 1 in Waymo
         sensor = i+1
-        translation = translations[sensor]
-        rotation = rotations[sensor]
-        utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translation, rotation)
+        utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translations[sensor], rotations[sensor])
 
 def extract_ego(frame, frame_num, lct_path):
     """Extracts ego data from one frame and puts it in the lct file system
@@ -194,35 +204,33 @@ def extract_ego(frame, frame_num, lct_path):
     utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
 
 def count_frames(dataset):
-    """counts frames to use for progress bar
+    """counts frames in dataset to use for progress bar
     Args:
         dataset: waymo dataset
     Returns:
         frame_count: number of frames
         """
     frame_count = 0
+    # dataset is a tfrecord, so no "length" exists.
     for frame in dataset:
         frame_count += 1
     return frame_count
 
 if __name__ == "__main__":
-    (waymo_path, output_path, custom_path) = parse_options()
+    (input_path, output_path) = parse_options()
 
-    #Check if path specified is a Waymo dataset file
-    if os.path.splitext(waymo_path)[1] != ".tfrecord":
+    # Check if path specified is a Waymo dataset file
+    if os.path.splitext(input_path)[1] != ".tfrecord":
         print("The file specified is not a tfrecord")
         sys.exit(2)
 
     path = os.getcwd()
-    if len(custom_path) != 0:
-        utils.create_lct_directory(os.getcwd().join(custom_path), output_path)
-    else:
-        utils.create_lct_directory(os.getcwd(), output_path)
+    utils.create_lct_directory(os.getcwd(), output_path)
 
-    #Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(waymo_path, '')
+    # Extract data from TFRecord File
+    dataset = tf.data.TFRecordDataset(input_path, '')
 
-    #Initialize LiDAR camera dictionarys
+    # Initialize LiDAR camera dictionarys
     translations = {}
     rotations = {}
 
@@ -230,9 +238,9 @@ if __name__ == "__main__":
     executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
     futures = []
 
-    #start progress bar
+    # start progress bar
     utils.print_progress_bar(0, frame_count)
-    #Loop through each frame
+    # Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
@@ -240,25 +248,18 @@ if __name__ == "__main__":
         if frame_num == 0:
             setup_rgb(frame, output_path)
             setup_lidar(frame, output_path, translations, rotations)
-        
-        #At this point have one frame imported as 'frame'
-        #extract_bounding(frame, frame_num, output_path)
-        #extract_rgb(frame, frame_num, output_path)
-        #extract_lidar(frame, frame_num, output_path, translations, rotations)
-        #extract_ego(frame, frame_num, output_path)
 
-        #Update progress bar
-        #utils.print_progress_bar(frame_num, frame_count)
+        # Each function call is submitted to a thread pool so that they can be run concurrently
+        # futures allows us to track when multithreaded functions terminate
+        # executor.submit starts a multithreaded proecss corresponding to the functions passed in as the first arg of the function call
         futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
         executor.submit(extract_rgb, frame, frame_num, output_path),
         executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
         executor.submit(extract_ego, frame, frame_num, output_path)])
 
+    # When each frame is done processing, update progress bar
     frame_num = 0
     for frame in futures:
         concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
         frame_num += 1
         utils.print_progress_bar(frame_num, frame_count)
-        
-
-    

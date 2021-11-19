@@ -1,7 +1,8 @@
-#Licensing
+"""
+utils.py
 
-
-#Utils for creating LCT Directory
+Utils for creating LCT Directory
+"""
 import os
 import sys
 import json
@@ -24,13 +25,13 @@ def translation_and_rotation(transform_matrix):
 
     transform_array = np.array(transform_matrix).reshape(4, 4)
 
-    #Extract the first 3 entries in the last column as the translation
+    # Extract the first 3 entries in the last column as the translation
     translation = tuple(transform_array[:3, -1])
 
-    #Extract the 3x3 rotation matrix from the upper left
+    # Extract the 3x3 rotation matrix from the upper left
     rotation_matrix = transform_array[:3, :3]
 
-    #Convert rotation matrix to a quaternion
+    # Convert rotation matrix to a quaternion
     quat = R.from_matrix(rotation_matrix)
     rotation = (quat.as_quat()[3], quat.as_quat()[0], quat.as_quat()[1], quat.as_quat()[2])
     
@@ -46,35 +47,40 @@ def print_progress_bar(frame_num, total):
         """
 
     length = 40
+
+    # Adjust size of progress bar based on console size
     if os.get_terminal_size()[0] < 50:
         length = 10
     elif os.get_terminal_size()[0] < 70:
         length = 20
+    
     filled_length = (length * frame_num//total)
     bar = '█' * filled_length + '-' * (length - filled_length)
     print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
-    # Print New Line on Complete
+    
+    # After progress is complete run a new line
     if frame_num == total: 
         print()
 
 
-#Creates top level lct directory structure at "path"
 def create_lct_directory(path, name):
-    """Create LCT directory at specified path
+    """Create top level LCT directory at specified path
     Args:
         path: target path where directory will be stored
     
     Returns:
         None
-    """
+        """
     sub_directories = ['cameras', 'pointcloud', 'bounding', 'pred_bounding', 'ego']
     try:
         parent_path = os.path.join(path, name)
         os.makedirs(parent_path, exist_ok=True)
-        print("added new folder")
+
+        # Create each sub directory
         for directory in sub_directories:
             full_path = os.path.join(parent_path, directory)
             os.makedirs(full_path, exist_ok=True)
+
     except OSError as error:
         print(error)
         sys.exit(1)
@@ -91,13 +97,13 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         None
         """
 
-    #Create necessary directory: ./Cameras/[name]
+    # Create necessary directory: ./Cameras/[name]
     work_dir = os.path.join(path, "cameras", name)
 
     os.makedirs(work_dir, exist_ok=True)
 
-    #Creates the Extrinsic.json file in the /Cameras/[name] directory from the
-    #translation and rotation parameters.
+    # Creates the Extrinsic.json file in the /Cameras/[name] directory from the
+    # translation and rotation parameters.
     extrinsics = {}
     extrinsics['translation'] = translation
     extrinsics['rotation'] = rotation
@@ -105,7 +111,7 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     with open(work_dir + "/extrinsics.json", "w") as extrinsic_file:
         extrinsic_file.write(json.dumps(extrinsics))
 
-    #Creates the Extrinsic.json file in the /Cameras/[name] directory from the intrinsic parameter.
+    # Creates the Extrinsic.json file in the /Cameras/[name] directory from the intrinsic parameter.
     with open(work_dir + "/intrinsics.json", "w") as intrinsic_file:
         intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
 
@@ -121,7 +127,6 @@ def add_rgb_frame(path, name, image, frame_num):
         None
         """
 
-    #Assumes directory exists
     image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
     str(frame_num) +".jpg"))
 
@@ -135,6 +140,7 @@ def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     Returns:
         None
         """
+    
     full_path = os.path.join(path, 'cameras', name, str(frame_num) + '.jpg')
     copyfile(input_path, full_path)
 
@@ -163,7 +169,8 @@ def add_lidar_frame(path, name, frame_num, points, translation, rotation):
         None
         """
 
-    # see .pcd file format documentation at https://pointclouds.org/documentation/tutorials/pcd_file_format.html
+    # Build a .pcd file line by line
+    # See .pcd file format documentation at https://pointclouds.org/documentation/tutorials/pcd_file_format.html
     pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z',
                 'SIZE 4 4 4', 'TYPE F F F', 'COUNT 1 1 1']
     pcd_lines.append('WIDTH ' + str(len(points)))
@@ -211,25 +218,24 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         None
         """
 
-    #Check that all lists are the same size
+    # Check that all lists are the same size
     lengths = [len(origins), len(sizes), len(rotations), len(annotation_names), len(confidences)]
     if lengths.count(len(origins)) != len(lengths):
         print("Frame_Bounding_Directory(): Length of lists is not equal!")
         sys.exit(2)
 
-    #Create directory that stores the boxes in one frame
+    # Create directory that stores the boxes in one frame
     full_path = os.path.join(path, 'bounding', str(frame_num))
     os.makedirs(full_path, exist_ok=True)
     
-    #Create description.json
+    # Create description.json
     description = {}
     description['num_boxes'] = len(origins)
     description_path = os.path.join(full_path, 'description.json')
     with open(description_path, 'w') as f:
         json.dump(description, f)
 
-    #Creates JSON file that stores all the boxes in a frame
-    
+    # Creates JSON file that stores all the boxes in a frame 
     json_name = 'boxes' + '.json'
     json_path = os.path.join(full_path, json_name)
     box_data = {}
@@ -258,25 +264,24 @@ def create_frame_predicted_directory(path, frame_num, origins, sizes, rotations,
         None
         """
 
-    #Check that all lists are the same size
+    # Check that all lists are the same size
     lengths = [len(origins), len(sizes), len(rotations), len(annotation_names), len(confidences)]
     if lengths.count(len(origins)) != len(lengths):
         print("Frame_Bounding_Directory(): Length of lists is not equal!")
         sys.exit(2)
 
-    #Create directory that stores the boxes in one frame
+    # Create directory that stores the boxes in one frame
     full_path = os.path.join(path, 'pred_bounding', str(frame_num))
     os.mkdir(full_path)
     
-    #Create description.json
+    # Create description.json
     description = {}
     description['num_boxes'] = len(origins)
     description_path = os.path.join(full_path, 'description.json')
     with open(description_path, 'w') as f:
         json.dump(description, f)
 
-    #Creates JSON file that stores all the boxes in a frame
-    
+    # Creates JSON file that stores all the boxes in a frame
     json_name = 'boxes' + '.json'
     json_path = os.path.join(full_path, json_name)
     box_data = {}
@@ -298,10 +303,10 @@ def create_ego_directory(path, frame, translation, rotation):
     Returns:
         None
         """
-    #Join path to ego dir
+    # Join path to ego dir
     full_path = os.path.join(path, 'ego')
 
-    #Add json file for frame number
+    # Add json file for frame number
     json_path = os.path.join(full_path, str(frame) + '.json')
     ego_data = {}
     ego_data['translation'] = translation
@@ -320,18 +325,22 @@ def is_lct_directory(path):
         is_verified: True if LCT directory is valid or False if not
     """
 
-    #individual verification bools
+    # Individual verification bools
     cameras_exist = os.path.exists(os.path.join(path, "cameras"))
     inside_cameras_valid = check_inside_cameras(os.path.join(path, "cameras"))
     pointcloud_exists = os.path.exists(os.path.join(path, "pointcloud"))
     inside_pointcloud_valid = check_inside_pointcloud(os.path.join(path, "pointcloud"))
     bounding_exists = os.path.exists(os.path.join(path, "bounding"))
+    inside_bounding_valid = check_inside_bounding(os.path.join(path, "bounding"))
     ego_exists = os.path.exists(os.path.join(path, "ego"))
+    inside_ego_valid = check_inside_ego(os.path.join(path, "ego"))
+    predicted_exists = os.path.exists(os.path.join(path, "pred_bounding"))
 
-    #overall verification bool
+
+    # Overall verification bool
     is_verified = True
 
-    #provides feedback to the user
+    # Provides feedback to the user
     if not cameras_exist:
         print("There is no directory named \"cameras\" at the selected path.\n")
         is_verified = False
@@ -345,10 +354,17 @@ def is_lct_directory(path):
     if not bounding_exists:
         print("There is no directory named \"bounding\" at the selected path. \n")
         is_verified = False
+    if not inside_bounding_valid:
+        is_verified = False
     if not ego_exists:
         print("There is no directory named \"ego\" at the selected path. \n")
         is_verified = False
-    
+    if not inside_ego_valid:
+        is_verified = False
+    if not predicted_exists:
+        print("There is no directory named \"pred_bounding\" at the selected path. \n")
+        is_verified = False
+
     return is_verified
 
 
@@ -357,19 +373,19 @@ def check_inside_cameras(path):
     """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to cameras directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
 
     is_verified = True
     
-    #cameras
+    # Cameras
     for dir in os.listdir(path):
         has_in = False
         has_ex = False
         has_jpg = True
-        #files in cameras
+        # Files in cameras
         for file in os.listdir(os.path.join(path, dir)):
             if file == "Extrinsics.JSON": 
                 if not has_ex: 
@@ -385,7 +401,7 @@ def check_inside_cameras(path):
                     print("directory " + dir + " has multiple Intrinsics.JSON files")
             else:
                 extension = file[-4:]
-                if not extension == ".jpg":
+                if extension != ".jpg":
                     is_verified = False
                     print("There are files in " + dir + "that are not Intrinsics.JSON, Extrinsics.JSON or .jpgs")
     
@@ -396,7 +412,7 @@ def check_inside_pointcloud(path):
     """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
     Prints out reason for invalidity if one exists
     Args:
-        path: path to LCT directory
+        path: path to pointcloud directory
     Returns:
         is_verified: false if not valid and true otherwise
     """
@@ -406,10 +422,61 @@ def check_inside_pointcloud(path):
     for dir in os.listdir(path):
         for file in os.listdir(os.path.join(path, dir)):
             extension = file[-4:]
-            if not extension == ".pcd":
+            if extension != ".pcd":
                 is_verified = False
                 print("There is a file in " + dir + " that is not a .pcd file")
     
     return is_verified
 
+def check_inside_bounding(path):
+    """Checks to make sure that all the subdirectories of bounding are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+           path: path to bounding directory
+       Returns:
+           is_verified: false if not valid and true otherwise    
+    """
+    
+    
+    is_verified = True
+
+    # Loop through frames
+    for dir in os.listdir(path):
+        has_description = False
+        has_boxes = False
+        # Loop through files in frame
+        for file in os.listdir(os.path.join(path, dir)):
+            if has_boxes and has_description:
+                is_verified = False
+                print("directory " + dir + " has multiple description.JSON/boxes.json files")
+            elif file == "description.json":
+                has_description = True
+            elif file == "boxes.json":
+                has_boxes = True
+            else:
+                is_verified = False
+        
+        if not has_boxes and not has_description:
+            is_verified = False
+            print("There is not a description.json and a boxes.json file in the " + dir + " directory")
+
+    return is_verified
+
+def check_inside_ego(path):
+    """Checks to makes sure that all the subdirectories of ego are properly formatted
+       Prints out the reason for invalidity if one exists
+       Args:
+            path: path to the ego directory
+       Returns: 
+            is_verified: false if not valid and true otherwise 
+    """
+
+    is_verified = True
+
+    for file in os.listdir(path):
+        if not file[-4:] == ".JSON":
+            is_verified = False
+            print("There is a file in the ego directory that is not a json file")
+
+    return is_verified
 
