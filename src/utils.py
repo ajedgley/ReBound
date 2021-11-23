@@ -67,7 +67,7 @@ def create_lct_directory(path, name):
     """Create top level LCT directory at specified path
     Args:
         path: target path where directory will be stored
-    
+        name: the name of the new directory to create
     Returns:
         None
         """
@@ -116,13 +116,13 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         intrinsic_file.write(json.dumps({"matrix" : intrinsic}))
 
 
-def add_rgb_frame(path, name, image, frame_num):
+def add_rgb_frame(path, name, frame_num, image):
     """Adds one jpg from one frame to the structure inside the camera directory for a given sensor
     Args:
         path: path to LCT directory
         name: name of RGB sensor
-        images: list of buffers containing JPG images (assumed that length of list is also number of frames)
         frame_num: the number corresponding to the frame
+        images: a buffer containing a JPG image
     Returns:
         None
         """
