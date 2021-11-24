@@ -48,8 +48,17 @@ def parse_options():
     """
     input_path = ""
     output_path = ""
+    batch_processing = False
+
+    # User is able to specify -h, -f, -o, and -r options
+    # -h brings up help menu
+    # -f is used to specify the path to the Waymo file you want to read in and requires one arg. If -r is specified then this arg
+    # corresponds to a directory containing all the .tfrecord files you'd like to read in
+    # -o is used to specify the path to the directory where the LVT format will go. If -r is specified then this folder will contain output
+    # folders for each .tfrecord file read in
+    # -r is used to specify the user is trying to batch process a set of files corresponding to the directory given with the -f flag
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hf:o:", "help")
+        opts, args = getopt.getopt(sys.argv[1:], "hf:o:r", "help")
     except getopt.GetoptError as err:
         print(err)
         sys.exit(2)
@@ -63,10 +72,13 @@ def parse_options():
             input_path = arg
         elif opt == "-o":
             output_path = arg
+        elif opt == "-r":
+            # Indicates that the user is trying to run batch processing
+            batch_processing = True
         else:
             sys.exit(2)
 
-    return (input_path, output_path)
+    return (input_path, output_path, batch_processing)
 
 def extract_bounding(frame, frame_num, lct_path):
     """Extracts the bounding data from a waymo frame and converts it into our intermediate format
@@ -217,49 +229,81 @@ def count_frames(dataset):
     return frame_count
 
 if __name__ == "__main__":
-    (input_path, output_path) = parse_options()
+    (input_path, output_path, batch_processing) = parse_options()
 
-    # Check if path specified is a Waymo dataset file
-    if os.path.splitext(input_path)[1] != ".tfrecord":
+    # This list will remain empty if we're not batch processing, but if we're batch processing then it will list all the items being
+    # proccessed
+    batch_items = []
+
+    # Check if path specified is a Waymo dataset file if not batch processing
+    if not batch_processing and os.path.splitext(input_path)[1] != ".tfrecord":
         print("The file specified is not a tfrecord")
         sys.exit(2)
+    else:
+        # Check if all files in directory specified correspond to Waymo dataset file.
+        dir_contents = os.listdir(input_path)
+        for item in dir_contents:
+            item_name_details = os.path.splitext(item)
+            # Fail if any item is not a .tfrecord
+            if item_name_details[1] != ".tfrecord":
+                print("The directory specified for batch processing has a file which is not a tfrecord")
+                print("The file name is", item)
+                sys.exit(2)
+            batch_items.append(item_name_details[0])
+
 
     path = os.getcwd()
-    utils.create_lct_directory(os.getcwd(), output_path)
+    utils.create_lct_directory(path, output_path)
+
+    # If we're batch processing, we have to make an output folder for each item we're converting
+    # Users can then point to the output folder they want to use when running lct.py
+    # Setting our output_path to be the parent directory for all these output folders
+    if batch_processing:
+        output_path = path + "/" + output_path
+        for item_name in batch_items:
+            utils.create_lct_directory(output_path, item_name)
 
     # Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(input_path, '')
+    datasets = []
+    if not batch_processing:
+        datasets.append(tf.data.TFRecordDataset(input_path, ''))
+    else:
+        # Convert each tfrecord file at the input directory location if we are batch processing
+        dir_contents = os.listdir(input_path)
+        for item in dir_contents:
+            datasets.append(tf.data.TFRecordDataset(input_path + "/" + item, ''))
 
-    # Initialize LiDAR camera dictionarys
-    translations = {}
-    rotations = {}
+    for dataset in datasets:
+        # Initialize LiDAR camera dictionaries
+        translations = {}
+        rotations = {}
 
-    frame_count = count_frames(dataset)
-    executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
-    futures = []
+        frame_count = count_frames(dataset)
+        executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
+        futures = []
 
-    # start progress bar
-    utils.print_progress_bar(0, frame_count)
-    # Loop through each frame
-    for frame_num, data in enumerate(dataset):
-        frame = open_dataset.Frame()
-        frame.ParseFromString(bytearray(data.numpy()))
+        # start progress bar
+        utils.print_progress_bar(0, frame_count)
+        # Loop through each frame
+        for frame_num, data in enumerate(dataset):
+            frame = open_dataset.Frame()
+            frame.ParseFromString(bytearray(data.numpy()))
 
-        if frame_num == 0:
-            setup_rgb(frame, output_path)
-            setup_lidar(frame, output_path, translations, rotations)
+            if frame_num == 0:
+                setup_rgb(frame, output_path)
+                setup_lidar(frame, output_path, translations, rotations)
 
-        # Each function call is submitted to a thread pool so that they can be run concurrently
-        # futures allows us to track when multithreaded functions terminate
-        # executor.submit starts a multithreaded proecss corresponding to the functions passed in as the first arg of the function call
-        futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
-        executor.submit(extract_rgb, frame, frame_num, output_path),
-        executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
-        executor.submit(extract_ego, frame, frame_num, output_path)])
+            # Each function call is submitted to a thread pool so that they can be run concurrently
+            # futures allows us to track when multithreaded functions terminate
+            # executor.submit starts a multithreaded proecss corresponding to the functions passed in as the first arg of the function call
+            futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
+            executor.submit(extract_rgb, frame, frame_num, output_path),
+            executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
+            executor.submit(extract_ego, frame, frame_num, output_path)])
 
-    # When each frame is done processing, update progress bar
-    frame_num = 0
-    for frame in futures:
-        concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
-        frame_num += 1
-        utils.print_progress_bar(frame_num, frame_count)
+        # When each frame is done processing, update progress bar
+        frame_num = 0
+        for frame in futures:
+            concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
+            frame_num += 1
+            utils.print_progress_bar(frame_num, frame_count)
