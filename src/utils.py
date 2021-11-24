@@ -148,7 +148,7 @@ def create_lidar_sensor_directory(path, name):
     """Creates directory for one LiDAR sensor
     Args:
         path: path to LCT directory
-        name: name of RGB sensor
+        name: name of LiDAR sensor
     Returns:
         None
         """
@@ -160,7 +160,7 @@ def add_lidar_frame(path, name, frame_num, points, translation, rotation):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
-        name: name of lidar sensor
+        name: name of LiDAR sensor
         frame_num: frame number
         points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
         translation: (x,y,z) tuple representing sensor translation
@@ -192,9 +192,9 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     """Copies one .pcd file to pointcloud directory
     Args:
         path: path to LCT directory
-        name: name of lidar sensor
+        name: name of LiDAR sensor
         frame_num: frame number
-        input_path: path to .pcd file
+        input_path: path to PCD file
     Returns:
         None
         """
@@ -258,7 +258,6 @@ def create_frame_predicted_directory(path, frame_num, origins, sizes, rotations,
         rotations:[n, 4] list of quaternions representing box rotation with respect to (0,0,0)
         annotation_names: list of length n where every element is a string with the name of the bounding box
         confidence: list of length n of integers where every element is a value from 0-100 representing the confidence percentage
-            should be 100 for ground truth
         origins, sizes, rotations, annotation_names, confidences should all be the same size
     Returns:
         None
