@@ -228,6 +228,41 @@ def count_frames(dataset):
         frame_count += 1
     return frame_count
 
+def convert_dataset(output_path, dataset):
+    # Initialize LiDAR camera dictionaries
+    translations = {}
+    rotations = {}
+
+    frame_count = count_frames(dataset)
+    executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
+    futures = []
+
+    # start progress bar
+    utils.print_progress_bar(0, frame_count)
+    # Loop through each frame
+    for frame_num, data in enumerate(dataset):
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+
+        if frame_num == 0:
+            setup_rgb(frame, output_path)
+            setup_lidar(frame, output_path, translations, rotations)
+
+        # Each function call is submitted to a thread pool so that they can be run concurrently
+        # futures allows us to track when multithreaded functions terminate
+        # executor.submit starts a multithreaded proecss corresponding to the functions passed in as the first arg of the function call
+        futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
+        executor.submit(extract_rgb, frame, frame_num, output_path),
+        executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
+        executor.submit(extract_ego, frame, frame_num, output_path)])
+
+    # When each frame is done processing, update progress bar
+    frame_num = 0
+    for frame in futures:
+        concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
+        frame_num += 1
+        utils.print_progress_bar(frame_num, frame_count)
+
 if __name__ == "__main__":
     (input_path, output_path, batch_processing) = parse_options()
 
@@ -251,9 +286,19 @@ if __name__ == "__main__":
                 sys.exit(2)
             batch_items.append(item_name_details[0])
 
-
+    # Frequently using current work directory; storing a reference
     path = os.getcwd()
-    utils.create_lct_directory(path, output_path)
+    
+    # If we're running batch processing, don't want our root folder to have subfolders for the different types of data. We only want subfolders for each scene
+    if batch_processing:
+        try:
+            parent_path = os.path.join(path, output_path)
+            os.makedirs(parent_path, exist_ok=True)
+        except OSError as error:
+            print(error)
+            sys.exit(1)
+    else:
+        utils.create_lct_directory(path, output_path)
 
     # If we're batch processing, we have to make an output folder for each item we're converting
     # Users can then point to the output folder they want to use when running lct.py
@@ -273,37 +318,9 @@ if __name__ == "__main__":
         for item in dir_contents:
             datasets.append(tf.data.TFRecordDataset(input_path + "/" + item, ''))
 
-    for dataset in datasets:
-        # Initialize LiDAR camera dictionaries
-        translations = {}
-        rotations = {}
-
-        frame_count = count_frames(dataset)
-        executor = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
-        futures = []
-
-        # start progress bar
-        utils.print_progress_bar(0, frame_count)
-        # Loop through each frame
-        for frame_num, data in enumerate(dataset):
-            frame = open_dataset.Frame()
-            frame.ParseFromString(bytearray(data.numpy()))
-
-            if frame_num == 0:
-                setup_rgb(frame, output_path)
-                setup_lidar(frame, output_path, translations, rotations)
-
-            # Each function call is submitted to a thread pool so that they can be run concurrently
-            # futures allows us to track when multithreaded functions terminate
-            # executor.submit starts a multithreaded proecss corresponding to the functions passed in as the first arg of the function call
-            futures.append([executor.submit(extract_bounding, frame, frame_num, output_path),
-            executor.submit(extract_rgb, frame, frame_num, output_path),
-            executor.submit(extract_lidar, frame, frame_num, output_path, translations, rotations),
-            executor.submit(extract_ego, frame, frame_num, output_path)])
-
-        # When each frame is done processing, update progress bar
-        frame_num = 0
-        for frame in futures:
-            concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
-            frame_num += 1
-            utils.print_progress_bar(frame_num, frame_count)
+    # Convert data into LVT generic format
+    if batch_processing:
+        for dataset, item_name in zip(datasets, batch_items):
+            convert_dataset(output_path + "/" + item_name, dataset)
+    else:
+        convert_dataset(output_path, datasets[0])
