@@ -151,7 +151,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         
     utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
-def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path):
+def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data):
     """Similar to extract_bounding, but specifically to read in predicted data given by a user
     Args:
         pred_path: Path to predicated data provided by user
@@ -166,7 +166,7 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path):
     rotations = []
     annotation_names = []
     confidences = []
-    pred_data = json.load(open(pred_path))
+    
 
     pred_sample_tokens = []
     
@@ -176,20 +176,13 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path):
     for sample_token in pred_data['results']:
         try:
             sample = nusc.get('sample', sample_token)
-            scene = nusc.get('scene', sample['scene_token'])
-            if scene['name'] not in scene_names:
-                scene_names.append(scene['name'])
             if sample['scene_token'] == scene_token:
                 pred_sample_tokens.append(sample_token)
         except:
             continue 
     
     
-    if len(pred_sample_tokens) == 0:
-        print("No scene in this dataset corresponds to any predicted data!")
-        print("Scenes in this dataset that do correspond to supplied predicted data:")
-        print(scene_names)
-        exit(2)
+
 
     # Now go through each sample token that corresponds to our scene and import the data taken from pred_data
     for sample_token in pred_sample_tokens:
@@ -283,7 +276,7 @@ def count_frames(nusc, sample):
 
     return frame_count
    
-def convert_dataset(output_path, scene_name):
+def convert_dataset(output_path, scene_name, pred_data):
     # Validate the scene name passed in
     try:
         scene_token = nusc.field2token('scene', 'name', scene_name)[0]
@@ -305,9 +298,9 @@ def convert_dataset(output_path, scene_name):
     # Set up LiDAR directory
     utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
 
-    if pred_path != "":
+    if pred_data != {}:
         print('Extracting predicted bounding boxes...')
-        extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path)
+        extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data)
     
     # Setup progress bar
     frame_count = count_frames(nusc, sample)
@@ -338,7 +331,10 @@ if __name__ == "__main__":
     if not validate_input_path(input_path):
         print("Invalid input path specified. Please check paths entered and try again")
         sys.exit(2)
-    
+    pred_data = {}
+    if pred_path != "":
+        pred_data = json.load(open(pred_path))
+
     nusc = NuScenes('v1.0-mini', input_path, True)
 
     path = os.getcwd()
@@ -363,4 +359,4 @@ if __name__ == "__main__":
     
 
     for scene_name in scene_names:
-        convert_dataset(output_path + "/" + scene_name, scene_name)
+        convert_dataset(output_path + "/" + scene_name, scene_name, pred_data)

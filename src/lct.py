@@ -234,6 +234,16 @@ class Window:
         # Call update function to draw all initial data
         self.update()
 
+        # This 'bounds' variable has nothing to do with the bounding boxes, it represents the box surrounding
+        # all of our lidar points and is used to set up the camera for the scene
+        bounds = self.widget3d.scene.bounding_box
+        self.widget3d.setup_camera(10, bounds, self.frame_extrinsic['translation'])
+        eye = [0,0,0]
+        eye[0] = self.frame_extrinsic['translation'][0]
+        eye[1] = self.frame_extrinsic['translation'][1]
+        eye[2] = 150.0
+        self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+
     def update_image(self):
         """Fetches new image from LVT Directory, and draws it onto a plt figure
            Uses nuScenes API to project 3D bounding boxes onto that plt figure
@@ -337,15 +347,7 @@ class Window:
         # Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         
-        # This 'bounds' variable has nothing to do with the bounding boxes, it represents the box surrounding
-        # all of our lidar points and is used to set up the camera for the scene
-        bounds = self.widget3d.scene.bounding_box
-        self.widget3d.setup_camera(10, bounds, self.frame_extrinsic['translation'])
-        eye = [0,0,0]
-        eye[0] = self.frame_extrinsic['translation'][0]
-        eye[1] = self.frame_extrinsic['translation'][1]
-        eye[2] = 150.0
-        self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+    
         
         
         # Go through each box and render it onto our 3D Widget
