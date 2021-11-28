@@ -124,6 +124,7 @@ class Window:
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 3 * pw.scaling
 
+        
         # Set up drop down menu for switching between RGB sensors
         sensor_select = gui.Combobox()
         for cam in self.camera_sensors:
@@ -132,44 +133,52 @@ class Window:
 
         # Set up checkboxes for selecting ground truth annotations
         # Have to go through each frame to have all possible annotations available
-        check_boxes = []
+        self.check_horiz = []
+
         for i in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(i), "boxes.json")))
             for annotation in boxes['annotations']:
                 if annotation not in self.color_map:
                     horiz = gui.Horiz()
-                    check = gui.Checkbox(annotation)
+                    check = gui.Checkbox("")
                     check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
                     self.color_map[annotation] = (randint(0, 255), randint(0, 255), randint(0, 255))
-
                     # Color Picker
                     color = gui.ColorEdit()
                     (r,g,b) = self.color_map[annotation]
                     color.color_value = gui.Color(r/255,g/255,b/255)
                     horiz.add_child(check)
+                    horiz.add_child(gui.Label(annotation))
                     horiz.add_child(color)
-                    check_boxes.append(horiz)
+                    horiz.add_child(gui.Label("Count: 0"))
+                    self.check_horiz.append(horiz)
 
 
         # Set up checkboxes for selecting predicted annotations
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "pred_bounding"))]
         self.pred_frames = len(frames_available)
-        pred_check_boxes = []
+        self.pred_check_horiz = []
+
         for i in range(0, self.pred_frames):
             boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(i), "boxes.json")))
             for annotation in boxes['annotations']:
                 if annotation not in self.color_map:
                     horiz = gui.Horiz()
-                    check = gui.Checkbox(annotation)
+                    check = gui.Checkbox("")
                     check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
                     self.color_map[annotation] = (randint(0, 255), randint(0, 255), randint(0, 255))
                     color = gui.ColorEdit()
                     (r,g,b) = self.color_map[annotation]
                     color.color_value = gui.Color(r/255,g/255,b/255)
                     horiz.add_child(check)
+                    horiz.add_child(gui.Label(annotation))
                     horiz.add_child(color)
-                    pred_check_boxes.append(horiz)
+                    horiz.add_child(gui.Label("Count: 0"))
+                    self.pred_check_horiz.append(horiz)
         
+        if self.pred_frames > 0:
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
+
         # Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
         sensor_switch_layout.add_child(gui.Label("Switch RGB Sensor"))
@@ -178,14 +187,14 @@ class Window:
         # Vertical widget for inserting checkboxes
         checkbox_layout = gui.Vert()
         checkbox_layout.add_child(gui.Label("Filter GT annotations"))
-        for box in check_boxes:
-            checkbox_layout.add_child(box)
+        for horiz_widget in self.check_horiz:
+            checkbox_layout.add_child(horiz_widget)
 
         # Vertical widget for inserting predicted checkboxes
         pred_checkbox_layout = gui.Vert()
         pred_checkbox_layout.add_child(gui.Label("Filter predicted annotations"))
-        for box in pred_check_boxes:
-            pred_checkbox_layout.add_child(box)
+        for horiz_widget in self.pred_check_horiz:
+            pred_checkbox_layout.add_child(horiz_widget)
        
         # Set up a widget to switch between frames
         frame_select = gui.NumberEdit(gui.NumberEdit.INT)
@@ -218,11 +227,29 @@ class Window:
         bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
         bounding_toggle_layout.add_child(bounding_toggle)
 
+        #Collapsable vertical widget that will hold comparison controls
+        comparison_controls = gui.CollapsableVert("Compare Predicted Data")
+
+
+
+        file_menu = gui.Menu()
+        file_menu.add_item("Export Current RGB Image...", 0)
+        file_menu.add_item("Export Current PointCloud...", 1)
+        file_menu.add_separator()
+        file_menu.add_item("Quit", 2)
+
+        menu = gui.Menu()
+        menu.add_menu("File", file_menu)
+        gui.Application.instance.menubar = menu
+
+
+
         # Add our widgets to the vertical widget
         layout.add_child(sensor_switch_layout)
         layout.add_child(frame_switch_layout)
         layout.add_child(bounding_toggle_layout)
         layout.add_child(confidence_select_layout)
+        layout.add_child(comparison_controls)
         layout.add_child(checkbox_layout)
         layout.add_child(pred_checkbox_layout)
 
@@ -230,6 +257,18 @@ class Window:
         cw.add_child(layout)
         pw.add_child(self.widget3d)        
         iw.add_child(self.image_widget)
+        
+        #cw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
+        #cw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
+        cw.set_on_menu_item_activated(2, self.on_menu_quit)
+
+        #iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
+        #iw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
+        iw.set_on_menu_item_activated(2, self.on_menu_quit)
+
+        #pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
+        #pw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
+        pw.set_on_menu_item_activated(2, self.on_menu_quit)
 
         # Call update function to draw all initial data
         self.update()
@@ -256,13 +295,17 @@ class Window:
         # Extract new image from file
         self.image = np.asarray(Image.open(self.image_path))
 
+        if self.box_data_name == "bounding":
+            boxes = self.boxes
+        else:
+            boxes = self.pred_boxes
         # Set the image width and height   
         # Figure out which bounding boxes are in our frame
-        for i in range(0, len(self.n_boxes)):
+        for i in range(0, len(boxes['origins'])):
             # Make sure annotation matches the filter
-            if (len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr) and self.boxes['confidences'][i] >= self.min_confidence:
-                box = self.n_boxes[i]
-                color = self.color_map[self.boxes['annotations'][i]]
+            if (len(self.filter_arr) == 0 or boxes['annotations'][i] in self.filter_arr) and boxes['confidences'][i] >= self.min_confidence:
+                box = Box(boxes['origins'][i], boxes['sizes'][i], Quaternion(boxes['rotations'][i]), name=boxes['annotations'][i], score=boxes['confidences'][i], velocity=(0,0,0))
+                color = self.color_map[boxes['annotations'][i]]
 
                 # Box is stored in vehicle frame, so transform it to RGB sensor frame
                 box.translate(-np.array(self.image_extrinsic['translation']))
@@ -312,14 +355,30 @@ class Window:
             Returns:
                 None
                 """
-        self.boxes = json.load(open(os.path.join(self.lct_path ,self.box_data_name, str(self.frame_num), "boxes.json")))
+        self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
+        #Update the counters for the gt boxes
+        for horiz_widget in self.check_horiz:
+            children = horiz_widget.get_children()
+            label_widget = children[1]
+            count_widget = children[3]
+            count_num = self.boxes['annotations'].count(label_widget.text)
+            count_widget.text = "Count: " + str(count_num)
+        
+        if self.pred_frames > 0:
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
+            #Update the counters for predicted boxes
+            for horiz_widget in self.pred_check_horiz:
+                children = horiz_widget.get_children()
+                label_widget = children[1]
+                count_widget = children[3]
 
-        # If there are no bounding data, nothing is displayed
-        if self.boxes['origins']:
-            print(self.boxes['origins'][0])
-            self.n_boxes = []
-            for i in range(0, len(self.boxes['origins'])):
-                self.n_boxes.append(Box(self.boxes['origins'][i], self.boxes['sizes'][i], Quaternion(self.boxes['rotations'][i]), name=self.boxes['annotations'][i], score=self.boxes['confidences'][i], velocity=(0,0,0)))
+                count_num = 0
+                for i in range(0, len(self.pred_boxes['origins'])):
+                    if self.pred_boxes['annotations'][i] == label_widget.text and self.pred_boxes['confidences'][i] >= self.min_confidence:
+                        count_num += 1
+                count_widget.text = "Count: " + str(count_num)
+
+        self.controls.post_redraw()
 
     def update_pointcloud(self):
         """Takes new pointcloud data and converts it to global frame, 
@@ -347,27 +406,29 @@ class Window:
         # Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         
-    
-        
+        if self.box_data_name == "bounding":
+            boxes = self.boxes
+        else:
+            boxes = self.pred_boxes
         
         # Go through each box and render it onto our 3D Widget
         # Only render box if it matches the filtering criteria
-        for i in range(0, len(self.boxes['origins'])):
-            if (len(self.filter_arr) == 0 or self.boxes['annotations'][i] in self.filter_arr) and self.boxes['confidences'][i] >= self.min_confidence:
+        for i in range(0, len(boxes['origins'])):
+            if (len(self.filter_arr) == 0 or boxes['annotations'][i] in self.filter_arr) and boxes['confidences'][i] >= self.min_confidence:
                 size = [0,0,0]
                 # We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
                 # in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
-                size[0] = self.boxes['sizes'][i][1]
-                size[1] = self.boxes['sizes'][i][0]
-                size[2] = self.boxes['sizes'][i][2]
+                size[0] = boxes['sizes'][i][1]
+                size[1] = boxes['sizes'][i][0]
+                size[2] = boxes['sizes'][i][2]
 
-                color = self.color_map[self.boxes['annotations'][i]]
-                bounding_box = o3d.geometry.OrientedBoundingBox(self.boxes['origins'][i], Quaternion(self.boxes['rotations'][i]).rotation_matrix, size)
+                color = self.color_map[boxes['annotations'][i]]
+                bounding_box = o3d.geometry.OrientedBoundingBox(boxes['origins'][i], Quaternion(boxes['rotations'][i]).rotation_matrix, size)
                 bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
                 bounding_box.translate(self.frame_extrinsic['translation'])
                 hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
                 bounding_box.color = matplotlib.colors.to_rgb(hex)
-                self.widget3d.scene.add_geometry(self.boxes['annotations'][i] + str(i), bounding_box, self.mat)
+                self.widget3d.scene.add_geometry(boxes['annotations'][i] + str(i), bounding_box, self.mat)
         
         # Force our widgets to update
         self.widget3d.force_redraw()
@@ -495,6 +556,9 @@ class Window:
         if int(new_val) >= 0 and int(new_val) <= 100:
             self.min_confidence = int(new_val)
             self.update()
+
+    def on_menu_quit(self):
+        gui.Application.instance.quit()
 
     def toggle_bounding(self, new_val, new_idx):
         """This updates the bounding box on the window to reflect either bounding or predicted bounding
