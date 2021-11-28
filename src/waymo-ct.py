@@ -48,25 +48,38 @@ def parse_options():
     """
     input_path = ""
     output_path = ""
+    batch_processing = False
+
+    # User is able to specify -h, -f, -o, and -r options
+    # -h brings up help menu
+    # -f is used to specify the path to the Waymo file you want to read in and requires one arg. If -r is specified then this arg
+    # corresponds to a directory containing all the .tfrecord files you'd like to read in
+    # -o is used to specify the path to the directory where the LVT format will go. If -r is specified then this folder will contain output
+    # folders for each .tfrecord file read in
+    # -r is used to specify the user is trying to batch process a set of files corresponding to the directory given with the -f flag
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hf:o:", "help")
+        opts, args = getopt.getopt(sys.argv[1:], "hf:o:r", "help")
     except getopt.GetoptError as err:
         print(err)
         sys.exit(2)
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print("required: -f to specify the path to the Waymo file")
-            print("required: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
+            print("REQUIRED: -f to specify the path to the Waymo file")
+            print("REQUIRED: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
+            print("OPTIONAL: -r to specify that the input to -f is a directory containing only tfrecord files to be converted")
             sys.exit(2)
         elif opt == "-f":
             input_path = arg
         elif opt == "-o":
             output_path = arg
+        elif opt == "-r":
+            # Indicates that the user is trying to run batch processing
+            batch_processing = True
         else:
             sys.exit(2)
 
-    return (input_path, output_path)
+    return (input_path, output_path, batch_processing)
 
 def extract_bounding(frame, frame_num, lct_path):
     """Extracts the bounding data from a waymo frame and converts it into our intermediate format
@@ -216,21 +229,8 @@ def count_frames(dataset):
         frame_count += 1
     return frame_count
 
-if __name__ == "__main__":
-    (input_path, output_path) = parse_options()
-
-    # Check if path specified is a Waymo dataset file
-    if os.path.splitext(input_path)[1] != ".tfrecord":
-        print("The file specified is not a tfrecord")
-        sys.exit(2)
-
-    path = os.getcwd()
-    utils.create_lct_directory(os.getcwd(), output_path)
-
-    # Extract data from TFRecord File
-    dataset = tf.data.TFRecordDataset(input_path, '')
-
-    # Initialize LiDAR camera dictionarys
+def convert_dataset(output_path, dataset):
+    # Initialize LiDAR camera dictionaries
     translations = {}
     rotations = {}
 
@@ -263,3 +263,55 @@ if __name__ == "__main__":
         concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
         frame_num += 1
         utils.print_progress_bar(frame_num, frame_count)
+
+if __name__ == "__main__":
+    (input_path, output_path, batch_processing) = parse_options()
+
+    # This list will remain empty if we're not batch processing, but if we're batch processing then it will list all the items being
+    # proccessed
+    batch_items = []
+    # Check if path specified is a Waymo dataset file if not batch processing
+    if not batch_processing and os.path.splitext(input_path)[1] != ".tfrecord":
+        print("The file specified is not a tfrecord")
+        sys.exit(2)
+    elif batch_processing:
+        # Check if all files in directory specified correspond to Waymo dataset file.
+        dir_contents = os.listdir(input_path)
+        for item in dir_contents:
+            item_name_details = os.path.splitext(item)
+            # Fail if any item is not a .tfrecord
+            if item_name_details[1] != ".tfrecord":
+                print("The directory specified for batch processing has a file which is not a tfrecord")
+                print("The file name is", item)
+                sys.exit(2)
+            batch_items.append(item_name_details[0])
+
+    # Frequently using current work directory; storing a reference
+    
+    
+    # If we're batch processing, we have to make an output folder for each item we're converting
+    # Users can then point to the output folder they want to use when running lct.py
+    # Setting our output_path to be the parent directory for all these output folders
+    if batch_processing:
+        for item_name in batch_items:
+            utils.create_lct_directory(output_path, item_name)
+    else:
+        utils.create_lct_directory(output_path, "")
+
+    # Extract data from TFRecord File
+    datasets = []
+    if not batch_processing:
+        datasets.append(tf.data.TFRecordDataset(input_path, ''))
+    else:
+        # Convert each tfrecord file at the input directory location if we are batch processing
+        dir_contents = os.listdir(input_path)
+        for item in dir_contents:
+            datasets.append(tf.data.TFRecordDataset(input_path + "/" + item, ''))
+
+    # Convert data into LVT generic format
+    if batch_processing:
+        executor_batch = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
+        for dataset, item_name in zip(datasets, batch_items):
+            convert_dataset(output_path + "/" + item_name, dataset)
+    else:
+        convert_dataset(output_path, datasets[0])
