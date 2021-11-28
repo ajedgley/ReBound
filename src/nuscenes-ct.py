@@ -166,11 +166,7 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pre
     rotations = []
     annotation_names = []
     confidences = []
-    
-
     pred_sample_tokens = []
-    
-    scene_names = []
     frame_num = 0
     # Create list of sample_tokens that correspond to the scene we are converting
     for sample_token in pred_data['results']:
@@ -205,7 +201,7 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pre
             rotations.append(box.orientation.q.tolist())
             annotation_names.append(data['detection_name'])
             confidences.append(int(data['detection_score'] * 100))
-        utils.create_frame_predicted_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+        utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, True)
         frame_num += 1
 
 def extract_rgb(nusc, sample, frame_num, target_path):
