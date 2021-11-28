@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+open3d = "*"
+numpy = "*"
+tensorflow = "*"
+waymo-open-dataset-tf-2-4-0 = "*"
+nuscenes-devkit = "*"
+matplotlib = "*"
+opencv-python = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
