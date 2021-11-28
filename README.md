@@ -3,33 +3,19 @@
 ## Getting Started
 ### Prerequistes
 LiDAR Visualization Tool runs on a Linux system, so you'll need to set up a system if you have a different operating system.
-We have 3 ways for you to set up a system.
-1. **Dual-boot your system for better processing power.**
+We have 2 ways for you to set up a system.
+1. **Dual-boot your system.**
+    
+    Here is a [tutorial](https://linuxconfig.org/how-to-install-ubuntu-20-04-alongside-windows-10-dual-boot) you can follow to set this up.
 2. **Set-up a GUI-based virtual machine.**
 
-    We used [VMware](https://www.vmware.com/) to set-up our virtual machine. 
-    Check out this [tutorial](https://unixcop.com/how-to-install-ubuntu-21-04-on-vmware-workstation-pro/) that can help with installation. However, here are some notes:
-    * UMD students have access to VMWare through TerpWare for free
-    * We used Ubuntu 20.04 since it includes the correct verion of Python (3.8)
-    * We recommend allocating at least 30 GB of disk space
-
-3. **SSH into a virtual machine**
-    
-    Download [RealVNC](https://www.realvnc.com/en/connect/download/viewer/) for your specific operating system and follow the instructions in the setup wizard.
-
-    SSH into the virtual machine in a terminal (password: check SVN)
-    ```sh
-    ssh cmsc435@vodaphone.cs.umd.edu
-    ```
-    Run the script `./vc` to create a console handler on the host
-
-    Add a connection in VNC Viewer to `vodaphone.cs.umd.edu:6` (password: check SVN)
-
-    Now you have a running virtual machine. After closing the machine, use `./vk` to kill the console handler.
-
+    We used [VMware](https://www.vmware.com/) to set-up our virtual machine but you can use any similar software (**Note**: [VirtualBox](https://www.virtualbox.org/) will not work since it doesn't support [Tensorflow](https://www.tensorflow.org/)). 
+    Check out this [tutorial](https://unixcop.com/how-to-install-ubuntu-21-04-on-vmware-workstation-pro/) that can help with installation; however, here are some notes:
+    * We used [Ubuntu 20.04](https://releases.ubuntu.com/20.04/) since it includes the correct verion of Python (Python 3.8)
+    * We recommend allocating at least 30 GB of hard disk space and 4 GB of memory
 
 ### Cloning the Repository
-**Note**: if any command doesn't exist, run `sudo apt-get install` for that command
+**Note**: if any command doesn't exist, run `sudo apt-get install <command>` for that command
 
 Execute these commands on your Linux system.
 ```sh
@@ -38,7 +24,7 @@ git checkout Development
 ```
 
 ### Installing Dependencies
-**Note**: if any command doesn't exist, run `sudo apt-get install` for that command
+**Note**: if any command doesn't exist, run `sudo apt-get install <command>` for that command
 
 As a good practice and to make sure you have the necessary dependencies, update your Linux system.
 ```sh
@@ -51,7 +37,7 @@ Check which version of Python you have. Due to constraints by Open3D, you must h
 python3 --version
 ```
 
-If you have a different version, you'll have to change to the correct version. We've included a tutorial for a Debian-based system.
+If you have a different version, you'll have to change to the correct version. We've included a tutorial for a Debian system.
 
 ---
 Run these commands to get the necessary dependencies to install Python (run in your root directory).
@@ -69,7 +55,7 @@ cd Python-3.8.12
 make -j 2
 sudo make altinstall
 ```
-**Note**: you'll use `python3.8` instead of `python3` from now on
+**Note**: you'll use `python3.8` wherever you see `python3` from now on
 
 ---
 
@@ -78,11 +64,11 @@ Move into the `src` folder
 pip install pipenv
 pipenv install
 ```
-Add the following lines to the `~/.bashrc` file
+Add the following lines to the `~/.bashrc` file (replace `your_username` with your username)
 ```sh
 export PATH=$PATH:/home/[your_username]/.local/bin/
 ```
-Run this to update the shell
+Run this command to update the shell
 ```sh
 . ~/.bashrc
 ```
@@ -95,9 +81,9 @@ Run this to update the shell
 
 `scene_name` : a scene from the dataset to convert
 
-`prediction_path` : a path to a JSON file with the predicted bounding boxes
+`prediction_path (optional)` : a path to a JSON file with the predicted bounding boxes
 ```sh
-python3 nuscenes-ct.py -f [input_path] -o [output_path] -s [scene_name] -p [prediction_path]
+python3 nuscenes-ct.py -f <input_path> -o <output_path> -s <scene_name> -p <prediction_path>
 ```
 ### Converting a Waymo Dataset
 `input_path` : a path to a Waymo TFRecord file
@@ -105,57 +91,14 @@ python3 nuscenes-ct.py -f [input_path] -o [output_path] -s [scene_name] -p [pred
 `output_path` : the the directory to output the LVT directory to
 
 ```sh
-python3 waymo-ct.py -f [input_path] -o [output_path]
+python3 waymo-ct.py -f <input_path> -o <output_path>
 ```
+
+### Converting a Third-Party Dataset
+Thus far, LiDAR Visualization Tool only supports conversion scripts for nuScenes and Waymo. However, users are welcome to creating their own conversion scripts using the utility functions we've created. You can find documentation for these functions here.
 
 ### Visualizing Data
 `input_path` : a path to a converted dataset in the LVT format
 ```sh
-pipenv run python3 lct.py -f [input_path]
+pipenv run python3 lct.py -f <input_path>
 ```
-
-## Folder Structure
-**cameras** : contains the RGB images from different cameras
-* CAM_FRONT
-  * 1.jpg
-  * 2.jpg
-  * ...
-* CAM_BACK
-  * 1.jpg
-  * 2.jpg
-  * ...
-...
-
-**pointcloud** : contains PCD files with LiDAR pointclouds for each sensor
-* LIDAR_TOP
-  * 1.pcd
-  * 2.pcd
-  * ...
-* LIDAR_FRONT
-  * 1.pcd
-  * 2.pcd
-  * ...
-* ...
-
-**bounding** : contains the ground truth bounding boxes as JSON files
-* 1
-  * description.json
-  * boxes.json
-* 2
-  * ...
-* ...
-
-**pred_bounding** : contains a model's predicted bounding boxes as JSON files
-* 1
-  * description.json
-  * boxes.json
-* 2
-  * ...
-* ...
-
-**ego** : contains the translation and rotation for each frame as JSON files
-* 1.json
-* 2.json
-* ...
-
-
