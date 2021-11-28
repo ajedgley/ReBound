@@ -65,8 +65,9 @@ def parse_options():
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print("required: -f to specify the path to the Waymo file")
-            print("required: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
+            print("REQUIRED: -f to specify the path to the Waymo file")
+            print("REQUIRED: -o to specify the name of the directory where the LVT format will go. Will be a folder in the current directory")
+            print("OPTIONAL: -r to specify that the input to -f is a directory containing only tfrecord files to be converted")
             sys.exit(2)
         elif opt == "-f":
             input_path = arg
@@ -269,12 +270,11 @@ if __name__ == "__main__":
     # This list will remain empty if we're not batch processing, but if we're batch processing then it will list all the items being
     # proccessed
     batch_items = []
-
     # Check if path specified is a Waymo dataset file if not batch processing
     if not batch_processing and os.path.splitext(input_path)[1] != ".tfrecord":
         print("The file specified is not a tfrecord")
         sys.exit(2)
-    else:
+    elif batch_processing:
         # Check if all files in directory specified correspond to Waymo dataset file.
         dir_contents = os.listdir(input_path)
         for item in dir_contents:
@@ -287,26 +287,16 @@ if __name__ == "__main__":
             batch_items.append(item_name_details[0])
 
     # Frequently using current work directory; storing a reference
-    path = os.getcwd()
     
-    # If we're running batch processing, don't want our root folder to have subfolders for the different types of data. We only want subfolders for each scene
-    if batch_processing:
-        try:
-            parent_path = os.path.join(path, output_path)
-            os.makedirs(parent_path, exist_ok=True)
-        except OSError as error:
-            print(error)
-            sys.exit(1)
-    else:
-        utils.create_lct_directory(path, output_path)
-
+    
     # If we're batch processing, we have to make an output folder for each item we're converting
     # Users can then point to the output folder they want to use when running lct.py
     # Setting our output_path to be the parent directory for all these output folders
     if batch_processing:
-        output_path = path + "/" + output_path
         for item_name in batch_items:
             utils.create_lct_directory(output_path, item_name)
+    else:
+        utils.create_lct_directory(output_path, "")
 
     # Extract data from TFRecord File
     datasets = []
@@ -320,6 +310,7 @@ if __name__ == "__main__":
 
     # Convert data into LVT generic format
     if batch_processing:
+        executor_batch = concurrent.futures.ThreadPoolExecutor(os.cpu_count() + 1)
         for dataset, item_name in zip(datasets, batch_items):
             convert_dataset(output_path + "/" + item_name, dataset)
     else:

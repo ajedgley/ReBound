@@ -31,8 +31,6 @@ def parse_options():
     # We can make scene_names a list so that it either includes the name of one scene or every scene a user wants to batch process
     scene_names = []
     pred_path = ""
-    batch_processing = False
-
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
     # User is able to specify -h, -f, -o, -s, and -r options
@@ -53,32 +51,28 @@ def parse_options():
 
     for opt, arg in opts:
         if opt in ("-h", "--help"):
-            print("use -f to specify directory of nuScenes dataset")
-            print("use -o to specify the path where the LVT dataset will go")
-            print("use -s to specify the name of the scene. You cannot use this with the -r flag")
-            print("use -p to give projected data")
-            print("use -r to indicate you would like to batch-process scenes from a nuscenes dataset. You cannot use this with the -s flag.")
+            print("REQUIRED: -f to specify directory of nuScenes dataset")
+            print("REQUIRED: -o to specify the path where the LVT dataset will go")
+            print("OPTIONAL: -p to specify a path to projected data")
             sys.exit(2)
-        elif opt == "-f": #and len(opts) == 2:
+        elif opt == "-f":
             input_path = arg
-        elif opt == "-o": #and len(opts) == 2:
-            output_path = arg
-        elif opt == "-s" and not batch_processing:
-            scene_names.append(arg)
-        elif opt == "-p":
-            pred_path = arg
-        elif opt == '-r' and len(scene_names) == 0:
-            batch_processing = True
-            input_string = input("Please enter a comma-delinated list of scene names. Remove any whitespace.\n")
-            list_of_scenes = input_string.split(",")
-            scene_names.extend(list_of_scenes)
+            input_string = input("Please enter a comma-delinated list of scene names. Remove any whitespace. To convert all scenes, leave blank\n")
+            if len(input_string) != 0:
+                list_of_scenes = input_string.split(",")
+                scene_names.extend(list_of_scenes)
             # Debug print statement
             print(scene_names)
+        elif opt == "-o":
+            output_path = arg
+        elif opt == "-p":
+            pred_path = arg
+
         else:
             print("Invalid set of arguments entered. Please refer to -h flag for more information.")
             sys.exit(2)
 
-    return (input_path, output_path, scene_names, pred_path, batch_processing)
+    return (input_path, output_path, scene_names, pred_path)
 
 # Used to check if file is valid nuScenes file
 def validate_input_path(input_path):
@@ -335,7 +329,7 @@ def convert_dataset(output_path, scene_name):
 if __name__ == "__main__":
 
     # Read in input database and output directory paths
-    (input_path, output_path, scene_names, pred_path, batch_processing) = parse_options()
+    (input_path, output_path, scene_names, pred_path) = parse_options()
     
     # Validate whether the database path passed in is valid and if the output directory path is valid
     # If the output directory exists, then use that directory. Otherwise, create a new directory at the
@@ -349,35 +343,24 @@ if __name__ == "__main__":
 
     path = os.getcwd()
 
-    # If we're running batch processing, don't want our root folder to have subfolders for the different types of data. We only want subfolders for each scene
-    if batch_processing:
-        try:
-            parent_path = os.path.join(path, output_path)
-            os.makedirs(parent_path, exist_ok=True)
-        except OSError as error:
-            print(error)
-            sys.exit(1)
-    else:
-        # Debug print statement
-        print("Creating parent directory for LCT output")
-        utils.create_lct_directory(path, output_path)
+    #If this was blank, then convert all scenes
+    if len(scene_names) == 0:
+        print("Converting All Scenes...")
+        for scene in nusc.scene:
+            scene_names.append(scene['name'])
+        print(scene_names)
 
     # Output directory path is validated in utils.create_lct_directory()
     # utils.create_lct_directory(os.getcwd(), output_path)
     
-    if batch_processing:
-        # If we're batch processing, we have to make an output folder for each item we're converting
-        # Users can then point to the output folder they want to use when running lct.py
-        # Setting our output_path to be the parent directory for all these output folders
-        output_path = path + "/" + output_path
-        for scene_name in scene_names:
-            utils.create_lct_directory(output_path, scene_name)
+    # We have to make an output folder for each item we're converting
+    # Users can then point to the output folder they want to use when running lct.py
+    # Setting our output_path to be the parent directory for all these output folders
+    for scene_name in scene_names:
+        utils.create_lct_directory(output_path, scene_name)
                 
-    # TODO: Do we need this?
     nusc.list_scenes()
     
-    if batch_processing:
-        for scene_name in scene_names:
-            convert_dataset(output_path + "/" + scene_name, scene_name)
-    else:
-        convert_dataset(output_path, scene_names[0])
+
+    for scene_name in scene_names:
+        convert_dataset(output_path + "/" + scene_name, scene_name)
