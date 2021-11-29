@@ -75,30 +75,32 @@ Run this command to update the shell
 
 ## Usage
 ### Converting a nuScenes Dataset
-`input_path` : a path to a nuScenes data file
+`input_path` : a path to a nuScenes directory
 
-`output_path` : the directory to output the LVT directory to
-
-`scene_name` : a scene from the dataset to convert
+`output_path` : a path to the output directory
 
 `prediction_path (optional)` : a path to a JSON file with the predicted bounding boxes
+
 ```sh
-python3 nuscenes-ct.py -f <input_path> -o <output_path> -s <scene_name> -p <prediction_path>
+pipenv run python3 nuscenes-ct.py -f <input_path> -o <output_path> -p <prediction_path>
 ```
+
 ### Converting a Waymo Dataset
 `input_path` : a path to a Waymo TFRecord file
 
-`output_path` : the the directory to output the LVT directory to
+`output_path` : a path to the output directory
+
+`r` : Specifies that the path given to input path is a directory that only contains TFRecord files to convert
 
 ```sh
-python3 waymo-ct.py -f <input_path> -o <output_path>
+pipenv run python3 waymo-ct.py -f <input_path> -o <output_path> -r
 ```
 
 ### Converting a Third-Party Dataset
-Thus far, LiDAR Visualization Tool only supports conversion scripts for nuScenes and Waymo. However, users are welcome to creating their own conversion scripts using the utility functions we've created. You can find documentation for these functions here.
+Thus far, LiDAR Visualization Tool only supports conversion scripts for nuScenes and Waymo. However, users are welcome to creating their own conversion scripts using the utility functions we've created. You can find documentation for these in LCT.md
 
 ### Visualizing Data
-`input_path` : a path to a converted dataset in the LVT format
+`input_path` : a path to a converted dataset in the our LVT format
 ```sh
 pipenv run python3 lct.py -f <input_path>
 ```
