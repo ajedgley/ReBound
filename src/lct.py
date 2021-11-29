@@ -187,30 +187,16 @@ class Window:
         sensor_switch_layout = gui.Horiz()
         sensor_switch_layout.add_child(gui.Label("Switch RGB Sensor"))
         sensor_switch_layout.add_child(sensor_select)
-
+        
         # Vertical widget for inserting checkboxes
         checkbox_layout = gui.CollapsableVert("Ground Truth Annotation Controls")
         for horiz_widget in self.check_horiz:
             checkbox_layout.add_child(horiz_widget)
-        next_gt_box_button = gui.Button("Next Box")
-        prev_gt_box_button = gui.Button("Prev Box")
-        gt_box_horiz = gui.Horiz()
-        gt_box_horiz.add_child(gui.Label("Snap to next selected GT Box"))
-        gt_box_horiz.add_child(prev_gt_box_button)
-        gt_box_horiz.add_child(next_gt_box_button)
-        checkbox_layout.add_child(gt_box_horiz)
 
         # Vertical widget for inserting predicted checkboxes
         pred_checkbox_layout = gui.CollapsableVert("Predicted Annotations Controls")
         for horiz_widget in self.pred_check_horiz:
             pred_checkbox_layout.add_child(horiz_widget)
-        next_pred_box_button = gui.Button("Next Box")
-        prev_pred_box_button = gui.Button("Prev Box")
-        pred_box_horiz = gui.Horiz()
-        pred_box_horiz.add_child(gui.Label("Snap to next selected Predicted Box"))
-        pred_box_horiz.add_child(prev_pred_box_button)
-        pred_box_horiz.add_child(next_pred_box_button)
-        pred_checkbox_layout.add_child(pred_box_horiz)
 
         # Set up a widget to switch between frames
         self.frame_select = gui.NumberEdit(gui.NumberEdit.INT)
@@ -243,13 +229,21 @@ class Window:
         bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
         bounding_toggle_layout.add_child(self.bounding_toggle)
 
+        #Button to jump to Birds eye view of vehicle
+
+        center_horiz = gui.Horiz()
+        center_view_button = gui.Button("Center")
+        center_view_button.set_on_clicked(self.jump_to_vehicle)
+        center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
+        center_horiz.add_child(center_view_button)
+
         #Collapsable vertical widget that will hold comparison controls
         comparison_controls = gui.CollapsableVert("Compare Predicted Data")
         toggle_comparison = gui.Checkbox("Display Predicted and GT")
         toggle_comparison.set_on_checked(self.toggle_box_comparison)
         comparison_controls.add_child(toggle_comparison)
 
- 
+        
 
         jump_frame_horiz = gui.Horiz()
         prev_button = gui.Button("Previous")
@@ -281,6 +275,7 @@ class Window:
         layout.add_child(frame_switch_layout)
         layout.add_child(bounding_toggle_layout)
         layout.add_child(confidence_select_layout)
+        layout.add_child(center_horiz)
         layout.add_child(comparison_controls)
         layout.add_child(checkbox_layout)
         layout.add_child(pred_checkbox_layout)
@@ -697,7 +692,17 @@ class Window:
                     break
         self.frame_select.set_value(current_frame)
         self.update()
-
+    
+    def jump_to_vehicle(self):
+        bounds = self.widget3d.scene.bounding_box
+        self.widget3d.setup_camera(10, bounds, self.frame_extrinsic['translation'])
+        eye = [0,0,0]
+        eye[0] = self.frame_extrinsic['translation'][0]
+        eye[1] = self.frame_extrinsic['translation'][1]
+        eye[2] = 150.0
+        self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+        self.update()
+    
     def on_menu_export_rgb(self):
         file_dialog = gui.FileDialog(gui.FileDialog.SAVE, "Choose file to save", self.controls.theme)
         file_dialog.add_filter(".png", "PNG files (.png)")
@@ -728,8 +733,10 @@ class Window:
             o3d.io.write_image(filename, img, 9)
         self.widget3d.scene.scene.render_to_image(on_image)
         self.update()
+
+
     def update(self):
-        """ This updates the window object to reflect new information such as user input
+        """ This updates the window object to reflect the current state
         Args:
             self: window object
         Returns:
