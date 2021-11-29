@@ -156,7 +156,7 @@ Now, we'll go through how to convert a third-party dataset using the functions i
 
 5. **(Optional) Import Predicted Bounding Boxes**
 
-    You can use the `create_frame_predicted_directory()` function to import into the `pred_bounding` directory. The function takes in:
+    You reuse the `create_frame_bounding_directory()` function with an extra argument to import into the `pred_bounding` directory. The function takes in:
     * a `path` to the top level of the LCT directory (i.e. `"\home\my_lct"`)
     * the `frame_num` which is the number corresponding to the current frame (i.e. `0`)
     * the `origins` which is a list of (x, y, z) tuples that represent the center of each box (i.e. `[(1, 2, 5), (3, 4, 6), ...]`)
@@ -164,6 +164,7 @@ Now, we'll go through how to convert a third-party dataset using the functions i
     * the `rotations` of each box with respect to (0, 0, 0) as a list of quaternion tuples (i.e. (`[(-0.5, 0.5, -0.5, 0.5), (-0.4, 0.4, -0.3, 0.4), ...]`))
     * the `annotation_names` for each boxe as a list of strings
     * the `confidence` which is a list of integers from 0-100 representing the confidence for each box
+    * a `predicted` boolean that flags if this list of boxes should go into the pred_bounding directory
 
 6. **Import Ego Data**
 
