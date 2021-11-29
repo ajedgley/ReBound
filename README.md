@@ -9,7 +9,7 @@ We have 2 ways for you to set up a system.
     Here is a [tutorial](https://linuxconfig.org/how-to-install-ubuntu-20-04-alongside-windows-10-dual-boot) you can follow to set this up.
 2. **Set-up a GUI-based virtual machine.**
 
-    We used [VMware](https://www.vmware.com/) to set-up our virtual machine but you can use any similar software (**Note**: [VirtualBox](https://www.virtualbox.org/) will not work since it doesn't support [Tensorflow](https://www.tensorflow.org/)). 
+    We used [VMware](https://www.vmware.com/) to set-up our virtual machine(**Note**: [VirtualBox](https://www.virtualbox.org/) will not be able to convert Waymo datasets due to lack of support for tensorflow [Tensorflow](https://www.tensorflow.org/)). 
     Check out this [tutorial](https://unixcop.com/how-to-install-ubuntu-21-04-on-vmware-workstation-pro/) that can help with installation; however, here are some notes:
     * We used [Ubuntu 20.04](https://releases.ubuntu.com/20.04/) since it includes the correct verion of Python (Python 3.8)
     * We recommend allocating at least 30 GB of hard disk space and 4 GB of memory
