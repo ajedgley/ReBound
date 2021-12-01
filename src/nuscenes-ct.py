@@ -37,12 +37,7 @@ def parse_options():
     # -h brings up help menu
     # -f is used to specify the path to the Waymo file you want to read in and requires one arg. If -r is specified then this arg
     # corresponds to a directory containing all the .tfrecord files you'd like to read in
-    # -o is used to specify the path to the directory where the LVT format will go. If -r is specified then this folder will contain output
-    # folders for each .tfrecord file read in
-    # -s corresponds to the name of the scene in the nuscenes data which you would like to read in. This expects an arg, and if you use this option
-    # you cannot use the -r arg for batch processing
-    # -r is used to specify the user is trying to batch process a set of files corresponding to the directory given with the -f flag. The user will be prompted
-    # to enter a comma-delinated list of scene names which they would like to load from their nuscenes dataset
+    # -o is used to specify the path to the directory where the LVT format will go.
     try:
         opts, _ = getopt.getopt(sys.argv[1:], "hf:o:s:p:r", "help")
     except getopt.GetoptError as err:

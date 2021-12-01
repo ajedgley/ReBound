@@ -638,24 +638,26 @@ class Window:
                 None
                 """
         # switch to predicted boxes
-        if new_val == "Predicted" and self.pred_frames > 0:
-            self.box_data_name = ["pred_bounding"]
-            self.update()
-        else: # switched to ground truth boxes
-            self.box_data_name = ["bounding"]
-            self.update()
+        if self.box_data_name != ["pred_bounding", "bounding"]:
+            if new_val == "Predicted" and self.pred_frames > 0:
+                self.box_data_name = ["pred_bounding"]
+                self.update()
+            else: # switched to ground truth boxes
+                self.box_data_name = ["bounding"]
+                self.update()
     
     def toggle_box_comparison(self, checked):
-        if checked:
-            self.box_data_name = ["pred_bounding", "bounding"]
-            self.compare_bounding = True
-        else:
-            if self.bounding_toggle.selected_text == "Ground Truth":
-                self.box_data_name = ["bounding"]
+        if self.pred_frames > 0:
+            if checked:
+                self.box_data_name = ["pred_bounding", "bounding"]
+                self.compare_bounding = True
             else:
-                self.box_data_name = ["pred_bounding"]
-            self.compare_bounding = False
-        self.update()
+                if self.bounding_toggle.selected_text == "Ground Truth":
+                    self.box_data_name = ["bounding"]
+                else:
+                    self.box_data_name = ["pred_bounding"]
+                self.compare_bounding = False
+            self.update()
 
     def jump_next_frame(self):
         found = False

@@ -20,7 +20,6 @@ We have 2 ways for you to set up a system.
 Execute these commands on your Linux system.
 ```sh
 git clone https://para.cs.umd.edu/neehar/lidar.git
-git checkout Development
 ```
 
 ### Installing Dependencies
@@ -61,6 +60,7 @@ sudo make altinstall
 
 Move into the `src` folder
 ```sh
+cd src
 pip install pipenv
 pipenv install
 ```
