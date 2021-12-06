@@ -344,7 +344,9 @@ class Window:
                     # Box is stored in vehicle frame, so transform it to RGB sensor frame
                     box.translate(-np.array(self.image_extrinsic['translation']))
                     box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
-                    
+                    #Thank you to Oscar Beijbom for posting the following algorithm
+                    #Code taken from https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
+                    #Under Apache 2.0 License
                     if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
                         # If the box is in view, then render it onto the PLT frame
                         corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
