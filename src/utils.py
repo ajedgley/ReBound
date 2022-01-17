@@ -12,6 +12,12 @@ from shutil import copyfile
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
 
+ORIGIN = 0
+SIZE = 1
+ROTATION = 2
+ANNOTATION = 3
+CONFIDENCE = 4
+COLOR = 5
 
 def translation_and_rotation(transform_matrix):
     """Converts tranformation matrix to a translation and rotation our conversion scripts can use
@@ -439,3 +445,19 @@ def check_inside_ego(path):
 
     return is_verified
 
+#Returns true if two axis-aligned 3D bounding boxes are overlapping
+def is_overlapping(box1, box2):
+    #Inspiration taken from https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection
+    o1 = box1[ORIGIN]
+    s1 = box1[SIZE]
+    o2 = box2[ORIGIN]
+    s2 = box2[SIZE]
+    #loop through x, y, z axes
+    for i in range(3):
+        a_max = o1[i] + (s1[i]/2)
+        a_min = o1[i] - (s1[i]/2)
+        b_max = o2[i] + (s2[i]/2)
+        b_min = o2[i] - (s2[i]/2)
+        if not (a_min <= b_max and a_max >= b_min):
+            return False
+    return True
