@@ -29,6 +29,7 @@ from pyquaternion import Quaternion
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility, transform_matrix
 from scipy.spatial.transform import Rotation as R
 import utils
+from operator import itemgetter
 
 ORIGIN = 0
 SIZE = 1
@@ -156,20 +157,20 @@ class Window:
         color_counter = 0
         for i in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(i), "boxes.json")))
-            for annotation in boxes['annotations']:
-                if annotation not in self.color_map:
+            for box in boxes['boxes']:
+                if box['annotation'] not in self.color_map:
                     horiz = gui.Horiz()
                     check = gui.Checkbox("")
-                    check.set_on_checked(self.make_on_check(annotation, self.on_filter_check))
-                    self.color_map[annotation] = colorlist[color_counter % len(colorlist)]
+                    check.set_on_checked(self.make_on_check(box['annotation'], self.on_filter_check))
+                    self.color_map[box['annotation']] = colorlist[color_counter % len(colorlist)]
                     color_counter += 1
                     # Color Picker
                     color = gui.ColorEdit()
-                    (r,g,b) = self.color_map[annotation]
+                    (r,g,b) = self.color_map[box['annotation']]
                     color.color_value = gui.Color(r/255,g/255,b/255)
                     color.set_on_value_changed(self.on_color_toggle)
                     horiz.add_child(check)
-                    horiz.add_child(gui.Label(annotation))
+                    horiz.add_child(gui.Label(box['annotation']))
                     horiz.add_child(color)
                     horiz.add_child(gui.Label("Count: 0"))
                     self.check_horiz.append(horiz)
@@ -182,20 +183,20 @@ class Window:
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
             boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(i), "boxes.json")))
-            for annotation in boxes['annotations']:
-                if annotation not in self.pred_color_map:
-                    self.all_pred_annotations.append(annotation)
+            for box in boxes['boxes']:
+                if box['annotation'] not in self.pred_color_map:
+                    self.all_pred_annotations.append(box['annotation'])
                     horiz = gui.Horiz()
                     check = gui.Checkbox("")
-                    check.set_on_checked(self.make_on_check(annotation, self.on_pred_filter_check))
-                    self.pred_color_map[annotation] = colorlist[color_counter % len(colorlist)]
+                    check.set_on_checked(self.make_on_check(box['annotation'], self.on_pred_filter_check))
+                    self.pred_color_map[box['annotation']] = colorlist[color_counter % len(colorlist)]
                     color_counter += 1
                     color = gui.ColorEdit()
-                    (r,g,b) = self.pred_color_map[annotation]
+                    (r,g,b) = self.pred_color_map[box['annotation']]
                     color.color_value = gui.Color(r/255,g/255,b/255)
                     color.set_on_value_changed(self.on_color_toggle)
                     horiz.add_child(check)
-                    horiz.add_child(gui.Label(annotation))
+                    horiz.add_child(gui.Label(box['annotation']))
                     horiz.add_child(color)
                     horiz.add_child(gui.Label("Count: 0"))
                     self.pred_check_horiz.append(horiz)
@@ -261,7 +262,7 @@ class Window:
         #Collapsable vertical widget that will hold comparison controls
         comparison_controls = gui.CollapsableVert("Compare Predicted Data")
         toggle_comparison = gui.Checkbox("Display Predicted and GT")
-        toggle_highlight = gui.Checkbox("Only Show Unmatched GT Annotations")
+        toggle_highlight = gui.Checkbox("Only Show Errors (Must Use Filters Below)")
         toggle_highlight.set_on_checked(self.toggle_highlights)
         toggle_comparison.set_on_checked(self.toggle_box_comparison)
         comparison_controls.add_child(toggle_comparison)
@@ -360,61 +361,6 @@ class Window:
                 """
         # Extract new image from file
         self.image = np.asarray(Image.open(self.image_path))
-
-        #Render Boxes
-        # for selection in self.box_data_name:
-        #     if selection == "bounding":
-        #         boxes = self.boxes
-        #         filter_arr = self.filter_arr
-        #         color_map = self.color_map
-        #     else:
-        #         boxes = self.pred_boxes
-        #         filter_arr = self.pred_filter_arr
-        #         color_map = self.pred_color_map
-        #     if self.compare_bounding:
-        #         filter_arr = self.filter_arr + self.pred_filter_arr
-
-        #     for i in range(0, len(boxes['origins'])):
-        #         # Make sure annotation matches the filter
-        #         if (len(filter_arr) == 0 or boxes['annotations'][i] in filter_arr) and boxes['confidences'][i] >= self.min_confidence:
-        #             box = Box(boxes['origins'][i], boxes['sizes'][i], Quaternion(boxes['rotations'][i]), name=boxes['annotations'][i], score=boxes['confidences'][i], velocity=(0,0,0))
-        #             color = color_map[boxes['annotations'][i]]
-
-        #             # Box is stored in vehicle frame, so transform it to RGB sensor frame
-        #             box.translate(-np.array(self.image_extrinsic['translation']))
-        #             box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
-                    
-        #             if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
-        #                 # If the box is in view, then render it onto the PLT frame
-        #                 corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
-        #                 def draw_rect(selected_corners, c):
-        #                     prev = selected_corners[-1]
-        #                     for corner in selected_corners:
-        #                         cv2.line(self.image,
-        #                                 (int(prev[0]), int(prev[1])),
-        #                                 (int(corner[0]), int(corner[1])),
-        #                                 c, 2)
-        #                         prev = corner
-
-        #                 # Draw the sides
-        #                 for i in range(4):
-        #                     cv2.line(self.image,
-        #                             (int(corners.T[i][0]), int(corners.T[i][1])),
-        #                             (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
-        #                             color, 2)
-
-        #                 # Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
-        #                 draw_rect(corners.T[:4], color)
-        #                 draw_rect(corners.T[4:], color)
-
-        #                 # Draw line indicating the front
-        #                 center_bottom_forward = np.mean(corners.T[2:4], axis=0)
-        #                 center_bottom = np.mean(corners.T[[2, 3, 7, 6]], axis=0)
-        #                 cv2.line(self.image,
-        #                         (int(center_bottom[0]), int(center_bottom[1])),
-        #                         (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
-        #                         color, 2)
-
         for b in self.boxes_to_render:
             box = Box(b[ORIGIN], b[SIZE], Quaternion(b[ROTATION]), name=b[ANNOTATION], score=b[CONFIDENCE], velocity=(0,0,0))
             color = b[COLOR]
@@ -475,7 +421,6 @@ class Window:
         print(self.pred_filter_arr)
         #
         self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
-        boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
         #Update the counters for the gt boxes
         for horiz_widget in self.check_horiz:
             children = horiz_widget.get_children()
@@ -483,12 +428,14 @@ class Window:
             color_widget = children[2]
             count_widget = children[3]
             self.color_map[label_widget.text] = (int(color_widget.color_value.red * 255), int(color_widget.color_value.green * 255), int(color_widget.color_value.blue * 255))
-            count_num = self.boxes['annotations'].count(label_widget.text)
+            count_num = 0
+            for box in self.boxes['boxes']:
+                if box['annotation'] == label_widget.text:
+                    count_num += 1
             count_widget.text = "Count: " + str(count_num)
         
         if self.pred_frames > 0:
             self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
-            pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
             #Update the counters for predicted boxes
             for horiz_widget in self.pred_check_horiz:
                 children = horiz_widget.get_children()
@@ -497,8 +444,8 @@ class Window:
                 count_widget = children[3]
                 self.pred_color_map[label_widget.text] = (int(color_widget.color_value.red * 255), int(color_widget.color_value.green * 255), int(color_widget.color_value.blue * 255))
                 count_num = 0
-                for i in range(0, len(self.pred_boxes['origins'])):
-                    if self.pred_boxes['annotations'][i] == label_widget.text and self.pred_boxes['confidences'][i] >= self.min_confidence:
+                for box in self.pred_boxes['boxes']:
+                    if box['annotation'] == label_widget.text and box['confidence'] >= self.min_confidence:
                         count_num += 1
                 count_widget.text = "Count: " + str(count_num)
 
@@ -506,37 +453,55 @@ class Window:
         #If highlight_faults is False, then we just filter boxes
         if self.highlight_faults is False:
             #Add GT Boxes we should render
-            for i in range(0, len(boxes['origins'])):
-                if (len(self.filter_arr) == 0 or boxes['annotations'][i] in self.filter_arr) and boxes['confidences'][i] >= self.min_confidence:
-                    bounding_box = [boxes['origins'][i], boxes['sizes'][i], boxes['rotations'][i], boxes['annotations'][i], boxes['confidences'][i], self.color_map[boxes['annotations'][i]]]
-                    
+            for box in self.boxes['boxes']:
+                if (len(self.filter_arr) == 0 or box['annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
+                    bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]]
                     if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
                         self.boxes_to_render.append(bounding_box)
             #Add Pred Boxes we should render
             if self.pred_frames > 0:
-                for i in range(0, len(pred_boxes['origins'])):
-                    if (len(self.pred_filter_arr) == 0 or pred_boxes['annotations'][i] in self.pred_filter_arr) and pred_boxes['confidences'][i] >= self.min_confidence:
-                        bounding_box = [pred_boxes['origins'][i], pred_boxes['sizes'][i], pred_boxes['rotations'][i], pred_boxes['annotations'][i], pred_boxes['confidences'][i], self.pred_color_map[pred_boxes['annotations'][i]]]
+                for box in self.pred_boxes['boxes']:
+                    if (len(self.pred_filter_arr) == 0 or box['annotation'] in self.pred_filter_arr) and box['confidence'] >= self.min_confidence:
+                        bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
                         if len(self.pred_filter_arr) == 0 or bounding_box[ANNOTATION] in self.pred_filter_arr:
                             self.boxes_to_render.append(bounding_box)
         #Otherwise, the user is trying to highlight faults, so the selected annotations define an equivalancy between annotations
         else:
             #For each gt box, only render it if it overlaps with a predicted box
-
-            #Sort predicted boxes based on confidence,
+            min_dist = .5 #minimum distance should be half a meter
+            #Reverse Sort predicted boxes based on confidence
+            sorted_list = sorted(self.pred_boxes['boxes'], key=itemgetter('confidence'), reverse=True)
+            sorted_list = [box for box in sorted_list if box['annotation'] in self.pred_filter_arr]
+            pred_matched = [False] * len(sorted_list)
+            #Get rid of GT boxes that have do not match the annotation
             
-            for i in range(0, len(boxes['origins'])):
-                render = True
-                gt_box = [boxes['origins'][i], boxes['sizes'][i], boxes['rotations'][i], boxes['annotations'][i], boxes['confidences'][i], self.color_map[boxes['annotations'][i]]]
-                for j in range(0, len(pred_boxes['origins'])):
-                    pred_box = [pred_boxes['origins'][j], pred_boxes['sizes'][j], pred_boxes['rotations'][j], pred_boxes['annotations'][j], pred_boxes['confidences'][j], self.pred_color_map[pred_boxes['annotations'][j]]]
-                    if (pred_box[CONFIDENCE] >= self.min_confidence) and (pred_box[ANNOTATION] in self.pred_filter_arr) and utils.is_overlapping(gt_box, pred_box) and (gt_box[ANNOTATION] in self.filter_arr):
-                        #If the code gets here, we found a matching box so we do not have to render this ground truth box
-                        render = False
-                if render and (len(self.filter_arr) == 0 or gt_box[ANNOTATION] in self.filter_arr):              
-                    self.boxes_to_render.append(gt_box)
-                        
+            gt_list = [box for box in self.boxes['boxes'] if box['annotation'] in self.filter_arr]
+            gt_matched = [False] * len(gt_list)
 
+            #match each predicted box to a gt box
+            for (pred_idx,pred_box) in enumerate(sorted_list):
+                dist = float('inf')
+                for (i, gt_box) in enumerate(gt_list):
+                    if not gt_matched[i]:
+                        temp_dist = utils.box_dist(pred_box, gt_box)
+                        if temp_dist < dist:
+                            dist = temp_dist
+                            match_index = i
+                #We found a valid match
+                if dist <= min_dist:
+                    gt_matched[match_index] = True
+                    pred_matched[pred_idx] = True
+                #else, we dont have to do anything since all pred boxes start out being marked as false positives
+            
+            #Add false positive predicted boxes to render list
+            for (i, box) in enumerate(sorted_list):
+                if pred_matched[i] == False:
+                    self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]])
+
+            #Add unmatched gt boxes to render list
+            for (i, box) in enumerate(gt_list):
+                if gt_matched == False:
+                    self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]])
         self.controls.post_redraw()
 
     def update_pointcloud(self):
@@ -565,35 +530,6 @@ class Window:
         # Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         
-        # Go through each box and render it onto our 3D Widget
-        # Only render box if it matches the filtering criteria
-
-        # for selection in self.box_data_name:
-        #     if selection == "bounding":
-        #         boxes = self.boxes
-        #         filter_arr = self.filter_arr
-        #         color_map = self.color_map
-        #     else:
-        #         boxes = self.pred_boxes
-        #         filter_arr = self.pred_filter_arr
-        #         color_map = self.pred_color_map
-        #     if self.compare_bounding:
-        #         filter_arr = self.filter_arr + self.pred_filter_arr
-        #     for i in range(0, len(boxes['origins'])):
-        #         if (len(filter_arr) == 0 or boxes['annotations'][i] in filter_arr) and boxes['confidences'][i] >= self.min_confidence:
-        #             size = [0,0,0]
-        #             # We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
-        #             # in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
-        #             size[0] = boxes['sizes'][i][1]
-        #             size[1] = boxes['sizes'][i][0]
-        #             size[2] = boxes['sizes'][i][2]
-        #             color = color_map[boxes['annotations'][i]]
-        #             bounding_box = o3d.geometry.OrientedBoundingBox(boxes['origins'][i], Quaternion(boxes['rotations'][i]).rotation_matrix, size)
-        #             bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-        #             bounding_box.translate(self.frame_extrinsic['translation'])
-        #             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
-        #             bounding_box.color = matplotlib.colors.to_rgb(hex)
-        #             self.widget3d.scene.add_geometry(boxes['annotations'][i] + str(i), bounding_box, self.mat)
         i = 0
         mat = rendering.Material()
         mat.shader = "unlitLine"
@@ -831,8 +767,8 @@ class Window:
                 return
             current_frame = (current_frame + 1) % self.num_frames
             current_box_list = json.load(open(os.path.join(self.lct_path , "bounding", str(current_frame), "boxes.json")))
-            for annotation in current_box_list['annotations']:
-                if annotation in self.filter_arr:
+            for box in current_box_list:
+                if box['annotation'] in self.filter_arr:
                     found = True
                     self.frame_num = current_frame
                     break
@@ -850,8 +786,8 @@ class Window:
                 return
             current_frame = (current_frame - 1) % self.num_frames
             current_box_list = json.load(open(os.path.join(self.lct_path , "bounding", str(current_frame), "boxes.json")))
-            for annotation in current_box_list['annotations']:
-                if annotation in self.filter_arr:
+            for box in current_box_list:
+                if box['annotation'] in self.filter_arr:
                     found = True
                     self.frame_num = current_frame
                     break

@@ -11,6 +11,7 @@ import numpy as np
 from shutil import copyfile
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
+import math
 
 ORIGIN = 0
 SIZE = 1
@@ -208,7 +209,7 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     copyfile(input_path, full_path)
 
-def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False):
+def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False):   
     """Adds box data for one frame
     Args:
         path: path to LCT directory
@@ -245,14 +246,19 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         json.dump(description, f)
 
     # Creates JSON file that stores all the boxes in a frame 
+
     json_name = 'boxes' + '.json'
     json_path = os.path.join(full_path, json_name)
     box_data = {}
-    box_data['origins'] = origins
-    box_data['sizes'] = sizes
-    box_data['rotations'] = rotations
-    box_data['annotations'] = annotation_names
-    box_data['confidences'] = confidences
+    box_data['boxes'] = []
+    for i in range(0, len(origins)):
+        box = {}
+        box['origin'] = origins[i]
+        box['size'] = sizes[i]
+        box['rotation'] = rotations[i]
+        box['annotation'] = annotation_names[i]
+        box['confidence'] = confidences[i]
+        box_data['boxes'].append(box)
 
     with open(json_path, 'w') as f:
         json.dump(box_data, f)
@@ -461,3 +467,9 @@ def is_overlapping(box1, box2):
         if not (a_min <= b_max and a_max >= b_min):
             return False
     return True
+
+def box_dist(box1, box2):
+    d_x = (box1['origin'][0] - box2['origin'][0]) ** 2
+    d_y = (box1['origin'][1] - box2['origin'][1]) ** 2
+    d_z = (box1['origin'][2] - box2['origin'][2]) ** 2
+    return math.sqrt(d_x + d_y + d_z)
