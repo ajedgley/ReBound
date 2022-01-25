@@ -205,7 +205,7 @@ def extract_rgb(nusc, sample, frame_num, target_path):
         nusc: NuScenes API object used for obtaining data
         sample: NuScenes frame
         frame_num: frame number
-        output_path: Path to generic data format directory
+        target_path: Path to generic data format directory
     Returns:
         None
         """
@@ -266,7 +266,30 @@ def count_frames(nusc, sample):
             sample_counter = nusc.get('sample', sample_counter['next'])
 
     return frame_count
-   
+def setup_annotation_map(target_path):
+    """ Sets up annotation map according to https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/detection/README.md
+        target_path: path to LCT Directory
+    """
+    annotation_map = {}
+    annotation_map['movable_object.barrier'] = ['barrier']
+    annotation_map['vehicle.bicycle'] = ['bicycle']
+    annotation_map['vehicle.bus.bendy'] = ['bus']
+    annotation_map['vehicle.bus.rigid'] = ['bus']
+    annotation_map['vehicle.car'] = ['car']
+    annotation_map['vehicle.construction'] = ['construction_vehicle']
+    annotation_map['vehicle.motorcycle'] = ['motorcycle']
+    annotation_map['human.pedestrian.adult'] = ['pedestrian']
+    annotation_map['human.pedestrian.child'] = ['pedestrian']
+    annotation_map['human.pedestrian.construction_worker'] = ['pedestrian']
+    annotation_map['human.pedestrian.police_officer'] = ['pedestrian']
+    annotation_map['movable_object.trafficcone'] = ['traffic_cone']
+    annotation_map['vehicle.trailer'] = ['trailer']
+    annotation_map['vehicle.truck'] = ['truck']
+
+
+    utils.create_annotation_map(target_path, annotation_map)
+
+
 def convert_dataset(output_path, scene_name, pred_data):
     # Validate the scene name passed in
     try:
@@ -292,10 +315,14 @@ def convert_dataset(output_path, scene_name, pred_data):
     if pred_data != {}:
         print('Extracting predicted bounding boxes...')
         extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data)
-    
+
+
+
     # Setup progress bar
     frame_count = count_frames(nusc, sample)
     utils.print_progress_bar(0, frame_count)
+
+    setup_annotation_map(output_path)
 
     # Extract sample data from scene
     while sample['next'] != '':
