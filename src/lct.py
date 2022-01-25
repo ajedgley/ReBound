@@ -7,16 +7,9 @@ Conversion tool to bring nuscenes dataset into LVT.
 import getopt
 import matplotlib.colors
 import matplotlib.pyplot as plt
-import time
-import queue
-from enum import Enum
 from PIL import Image
-from random import randint
 import sys
-import io
 import numpy as np
-from numpy import core
-from numpy.core.numeric import normalize_axis_tuple
 import open3d.visualization.gui as gui
 from PIL import Image
 import open3d as o3d
@@ -26,11 +19,12 @@ import os
 import cv2
 from nuscenes.utils.data_classes import Box
 from pyquaternion import Quaternion
-from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility, transform_matrix
-from scipy.spatial.transform import Rotation as R
+from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
 import utils
 from operator import itemgetter
+import platform
 
+OS_STRING = platform.system()
 ORIGIN = 0
 SIZE = 1
 ROTATION = 2
@@ -86,9 +80,13 @@ class Window:
         self.lct_path = lct_dir
         self.camera_sensors, self.lidar_sensors = self.get_cams_and_pointclouds(self.lct_path)
         self.box_data_name = ["bounding"]
-        self.min_confidence = 80
+        self.min_confidence = 50
         self.highlight_faults = False
+        self.show_false_positive = False
+        self.show_incorrect_annotations = False
         self.boxes_to_render = []
+        self.show_score = False
+        self.label_list = []
         # These three values represent the current LiDAR sensors, RGB sensors, and annotations being displayed
         self.rgb_sensor_name = self.camera_sensors[0]
         self.lidar_sensor_name = self.lidar_sensors[0]
@@ -100,7 +98,6 @@ class Window:
         self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
         self.pcd_paths = []
         self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "0.jpg")
-
         # We extract the first image from LCT in order to get the needed data to create our plt figure
         self.image = Image.open(self.image_path)
         self.image_w = self.image.width
@@ -121,6 +118,13 @@ class Window:
         # List to store bounding boxes as NuScenes Box Objects
         self.n_boxes = []
 
+
+        #Import the annotation map if it exists
+        self.annotation_map = {}
+        if os.path.exists(os.path.join(self.lct_path, "pred_bounding", "annotation_map.json")):
+            self.annotation_map = json.load(open(os.path.join(self.lct_path, "pred_bounding", "annotation_map.json")))
+
+        print(self.annotation_map)
         # Aliases for easier referencing
         cw = self.controls
         pw = self.pointcloud_window
@@ -178,7 +182,7 @@ class Window:
 
         # Set up checkboxes for selecting predicted annotations
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "pred_bounding"))]
-        self.pred_frames = len(frames_available)
+        self.pred_frames = len(frames_available) - 1
         self.pred_check_horiz = []
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
@@ -233,7 +237,7 @@ class Window:
         # Set up a widget to specify a minimum annotation confidence
         confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
         confidence_select.set_limits(0,100)
-        confidence_select.set_value(80)
+        confidence_select.set_value(50)
         confidence_select.set_on_value_changed(self.on_confidence_switch)
 
         # Add confidence select widget to horizontal
@@ -262,9 +266,20 @@ class Window:
         #Collapsable vertical widget that will hold comparison controls
         comparison_controls = gui.CollapsableVert("Compare Predicted Data")
         toggle_comparison = gui.Checkbox("Display Predicted and GT")
-        toggle_highlight = gui.Checkbox("Only Show Errors (Must Use Filters Below)")
+        toggle_highlight = gui.Checkbox("Show Unmatched GT Annotations")
         toggle_highlight.set_on_checked(self.toggle_highlights)
         toggle_comparison.set_on_checked(self.toggle_box_comparison)
+
+        toggle_false_positive = gui.Checkbox("Show False Positives")
+        toggle_false_positive.set_on_checked(self.toggle_false_positive)
+
+
+        toggle_incorrect_annotations = gui.Checkbox("Show Incorrect Annotations")
+        toggle_incorrect_annotations.set_on_checked(self.toggle_incorrect_annotations)
+
+        toggle_score = gui.Checkbox("Show Confidence Score")
+        toggle_score.set_on_checked(self.toggle_score)
+
         comparison_controls.add_child(toggle_comparison)
         comparison_controls.add_child(toggle_highlight)
         
@@ -287,8 +302,13 @@ class Window:
         file_menu.add_separator()
         file_menu.add_item("Quit", 2)
 
+        tools_menu = gui.Menu()
+        tools_menu.add_item("Scan For Errors",3)
+        tools_menu.add_item("Export Error Report (.csv)", 4)
+
         menu = gui.Menu()
         menu.add_menu("File", file_menu)
+        menu.add_menu("Tools", tools_menu)
         gui.Application.instance.menubar = menu
 
 
@@ -301,9 +321,12 @@ class Window:
         self.scene_nav.add_child(sensor_switch_layout)
         self.scene_nav.add_child(jump_frame_horiz)
 
-        self.anno_control.add_child(bounding_toggle_layout)
+        #self.anno_control.add_child(bounding_toggle_layout)
         self.anno_control.add_child(confidence_select_layout)
         self.anno_control.add_child(toggle_highlight)
+        self.anno_control.add_child(toggle_false_positive)
+        self.anno_control.add_child(toggle_incorrect_annotations)
+        self.anno_control.add_child(toggle_score)
         self.anno_control.add_child(checkbox_layout)
         self.anno_control.add_child(pred_checkbox_layout)
 
@@ -328,14 +351,20 @@ class Window:
         cw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         cw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
+        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        cw.set_on_menu_item_activated(4, self.on_error_export)
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         iw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         iw.set_on_menu_item_activated(2, self.on_menu_quit)
+        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        cw.set_on_menu_item_activated(4, self.on_error_export)
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         pw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         pw.set_on_menu_item_activated(2, self.on_menu_quit)
+        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        cw.set_on_menu_item_activated(4, self.on_error_export)
 
         # Call update function to draw all initial data
         self.update()
@@ -372,6 +401,7 @@ class Window:
             if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
                 # If the box is in view, then render it onto the PLT frame
                 corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
+
                 def draw_rect(selected_corners, c):
                     prev = selected_corners[-1]
                     for corner in selected_corners:
@@ -400,12 +430,17 @@ class Window:
                         (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
                         color, 2)
 
+                #Only render confidence if this isnt at GT box        
+                if b[CONFIDENCE] < 100 and self.show_score:
+                    cv2.putText(self.image, str(b[CONFIDENCE]), (int(corners.T[0][0]), int(corners.T[1][1])), cv2.FONT_HERSHEY_SIMPLEX ,1, (255,0,0), 2)
 
         new_image = o3d.geometry.Image(self.image)
         self.image_widget.update_image(new_image)
 
         # Force image widget to redraw
-        self.image_window.post_redraw()
+        #Post Redraw calls seem to crash the app on windows. Temporary workaround
+        if OS_STRING != "Windows":
+            self.image_window.post_redraw()
 
     def update_bounding(self):
         """Updates bounding box information when switching frames
@@ -451,30 +486,32 @@ class Window:
 
 
         #If highlight_faults is False, then we just filter boxes
-        if self.highlight_faults is False:
+        if self.highlight_faults is False and self.show_false_positive is False and self.show_incorrect_annotations is False:
             #Add GT Boxes we should render
             for box in self.boxes['boxes']:
-                if (len(self.filter_arr) == 0 or box['annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
+                if ((len(self.filter_arr) == 0 and len(self.pred_filter_arr) == 0) or box['annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
                     bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]]
                     if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
                         self.boxes_to_render.append(bounding_box)
             #Add Pred Boxes we should render
             if self.pred_frames > 0:
                 for box in self.pred_boxes['boxes']:
-                    if (len(self.pred_filter_arr) == 0 or box['annotation'] in self.pred_filter_arr) and box['confidence'] >= self.min_confidence:
+                    if ((len(self.pred_filter_arr) == 0 and len(self.filter_arr) == 0) or box['annotation'] in self.pred_filter_arr) and box['confidence'] >= self.min_confidence:
                         bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
                         if len(self.pred_filter_arr) == 0 or bounding_box[ANNOTATION] in self.pred_filter_arr:
                             self.boxes_to_render.append(bounding_box)
+        
         #Otherwise, the user is trying to highlight faults, so the selected annotations define an equivalancy between annotations
-        else:
+        if self.show_false_positive or self.highlight_faults:
             #For each gt box, only render it if it overlaps with a predicted box
             min_dist = .5 #minimum distance should be half a meter
             #Reverse Sort predicted boxes based on confidence
             sorted_list = sorted(self.pred_boxes['boxes'], key=itemgetter('confidence'), reverse=True)
-            sorted_list = [box for box in sorted_list if box['annotation'] in self.pred_filter_arr]
+            sorted_list = [box for box in sorted_list if box['annotation'] in self.pred_filter_arr and box['confidence'] >= self.min_confidence]
             pred_matched = [False] * len(sorted_list)
-            #Get rid of GT boxes that have do not match the annotation
             
+            
+            #Get rid of GT boxes that have do not match the annotation
             gt_list = [box for box in self.boxes['boxes'] if box['annotation'] in self.filter_arr]
             gt_matched = [False] * len(gt_list)
 
@@ -482,27 +519,44 @@ class Window:
             for (pred_idx,pred_box) in enumerate(sorted_list):
                 dist = float('inf')
                 for (i, gt_box) in enumerate(gt_list):
+                    temp_dist = utils.box_dist(pred_box, gt_box)
                     if not gt_matched[i]:
-                        temp_dist = utils.box_dist(pred_box, gt_box)
                         if temp_dist < dist:
                             dist = temp_dist
                             match_index = i
                 #We found a valid match
                 if dist <= min_dist:
+                    #TODO Assume that the closet annotation is the correct one? And compare the name of the annotation
                     gt_matched[match_index] = True
                     pred_matched[pred_idx] = True
-                #else, we dont have to do anything since all pred boxes start out being marked as false positives
-            
+
             #Add false positive predicted boxes to render list
-            for (i, box) in enumerate(sorted_list):
-                if pred_matched[i] == False:
-                    self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]])
+            if self.show_false_positive:
+                for (i, box) in enumerate(sorted_list):
+                    if pred_matched[i] == False:
+                        self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]])
 
             #Add unmatched gt boxes to render list
-            for (i, box) in enumerate(gt_list):
-                if gt_matched == False:
-                    self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]])
-        self.controls.post_redraw()
+            if self.highlight_faults:
+                for (i, box) in enumerate(gt_list):
+                    if gt_matched[i] == False:
+                        self.boxes_to_render.append([box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]])
+        
+        #The user is trying to see if any GT boxes were categorized by mistake
+        if self.show_incorrect_annotations:
+            gt_list = [box for box in self.boxes['boxes'] if box['annotation'] in self.filter_arr]
+            pred_list = [box for box in self.pred_boxes['boxes'] if box['confidence'] >= self.min_confidence]
+            min_dist = .5
+            for pred_box in pred_list:
+                for gt_box in gt_list:
+                    dist = utils.box_dist(pred_box, gt_box)
+                    #if the box is within the distance cuttoff, but has the wrong annotation, we render both the gt box and predicted box
+                    if dist <= min_dist and pred_box['annotation'] not in self.pred_filter_arr:
+                        self.boxes_to_render.append([pred_box['origin'], pred_box['size'], pred_box['rotation'], pred_box['annotation'], pred_box['confidence'], self.pred_color_map[pred_box['annotation']]])
+                        self.boxes_to_render.append([gt_box['origin'], gt_box['size'], gt_box['rotation'], gt_box['annotation'], gt_box['confidence'], self.color_map[gt_box['annotation']]])
+        #Post Redraw calls seem to crash the app on windows. Temporary workaround
+        if OS_STRING != "Windows":
+            self.controls.post_redraw()
 
     def update_pointcloud(self):
         """Takes new pointcloud data and converts it to global frame, 
@@ -515,7 +569,11 @@ class Window:
         self.widget3d.scene.clear_geometry()
         # Add Pointcloud
         temp_points = np.empty((0,3))
-  
+        for label in self.label_list:
+            self.widget3d.remove_3d_label(label)
+
+        self.label_list = []
+
         for i, pcd_path in enumerate(self.pcd_paths):
             temp_cloud = o3d.io.read_point_cloud(pcd_path)
             # sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
@@ -547,9 +605,17 @@ class Window:
             bounding_box.translate(self.frame_extrinsic['translation'])
             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
             bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+            if box[CONFIDENCE] < 100 and self.show_score:
+                label = self.widget3d.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
+                label.color = gui.Color(1.0,0.0,0.0)
+                self.label_list.append(label)
+
             self.widget3d.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
             i += 1
         
+
+
         #Add Line that indicates current RGB Camera View
         line = o3d.geometry.LineSet()
         line.points = o3d.utility.Vector3dVector([[0,0,0], [0,0,2]])
@@ -566,9 +632,13 @@ class Window:
         
 
         self.widget3d.scene.add_geometry("RGB Line",line, mat)
+
+        
         # Force our widgets to update
         self.widget3d.force_redraw()
-        self.pointcloud_window.post_redraw()
+        #Post Redraw calls seem to crash the app on windows. Temporary workaround
+        if OS_STRING != "Windows":
+            self.pointcloud_window.post_redraw()
     
     def update_poses(self):
         """Extracts all the pose data when switching sensors, and or frames
@@ -756,8 +826,28 @@ class Window:
             else:
                 self.highlight_faults = False
             self.update()
+    
+    def toggle_false_positive(self, checked):
+        if self.pred_frames > 0:
+            if checked:
+                self.show_false_positive = True
+            else:
+                self.show_false_positive = False
+            self.update()
+    def toggle_incorrect_annotations(self, checked):
+        if self.pred_frames > 0:
+            if checked:
+                self.show_incorrect_annotations = True
+            else:
+                self.show_incorrect_annotations = False
+            self.update()
 
-        
+    def toggle_score(self, checked):
+        if checked:
+            self.show_score = True
+        else:
+            self.show_score = False
+        self.update()
     def jump_next_frame(self):
         found = False
         current_frame = self.frame_num
@@ -767,7 +857,7 @@ class Window:
                 return
             current_frame = (current_frame + 1) % self.num_frames
             current_box_list = json.load(open(os.path.join(self.lct_path , "bounding", str(current_frame), "boxes.json")))
-            for box in current_box_list:
+            for box in current_box_list['boxes']:
                 if box['annotation'] in self.filter_arr:
                     found = True
                     self.frame_num = current_frame
@@ -786,7 +876,7 @@ class Window:
                 return
             current_frame = (current_frame - 1) % self.num_frames
             current_box_list = json.load(open(os.path.join(self.lct_path , "bounding", str(current_frame), "boxes.json")))
-            for box in current_box_list:
+            for box in current_box_list['boxes']:
                 if box['annotation'] in self.filter_arr:
                     found = True
                     self.frame_num = current_frame
@@ -835,7 +925,140 @@ class Window:
         self.widget3d.scene.scene.render_to_image(on_image)
         self.update()
 
+    
 
+    def on_error_scan(self):
+        dialog = gui.Dialog("Test1")
+
+        window = gui.Application.instance.create_window("Errors", 400, 800)
+
+        
+
+        em = self.controls.theme.font_size
+        margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
+        layout = gui.Vert(0, margin)
+        
+        error_count = 0
+
+        for j in range(0, self.num_frames):
+            boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
+            pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
+
+            unmatched_map = {}
+            false_positive_map = {}
+            incorrect_annotation_map = {}
+            
+            ####################
+
+            if self.show_false_positive or self.highlight_faults:
+                #For each gt box, only render it if it overlaps with a predicted box
+                min_dist = .5 #minimum distance should be half a meter
+                #Reverse Sort predicted boxes based on confidence
+                sorted_list = sorted(pred_boxes['boxes'], key=itemgetter('confidence'), reverse=True)
+                sorted_list = [box for box in sorted_list if box['annotation'] in self.pred_filter_arr and box['confidence'] >= self.min_confidence]
+                pred_matched = [False] * len(sorted_list)
+                
+                
+                #Get rid of GT boxes that have do not match the annotation
+                gt_list = [box for box in boxes['boxes'] if box['annotation'] in self.filter_arr]
+                gt_matched = [False] * len(gt_list)
+
+                #match each predicted box to a gt box
+                for (pred_idx,pred_box) in enumerate(sorted_list):
+                    dist = float('inf')
+                    for (i, gt_box) in enumerate(gt_list):
+                        temp_dist = utils.box_dist(pred_box, gt_box)
+                        if not gt_matched[i]:
+                            if temp_dist < dist:
+                                dist = temp_dist
+                                match_index = i
+                    #We found a valid match
+                    if dist <= min_dist:
+                        gt_matched[match_index] = True
+                        pred_matched[pred_idx] = True
+
+                #Add false positive predicted boxes to render list
+                if self.show_false_positive:
+                    for (i, box) in enumerate(sorted_list):
+                        if pred_matched[i] == False:
+                            false_positive_map[box['annotation']] = false_positive_map.get(box['annotation'], 0) + 1
+                #Add unmatched gt boxes to render list
+                if self.highlight_faults:
+                    for (i, box) in enumerate(gt_list):
+                        if gt_matched[i] == False:
+                            unmatched_map[box['annotation']] = unmatched_map.get(box['annotation'], 0) + 1
+        
+            #The user is trying to see if any GT boxes were categorized by mistake
+            if self.show_incorrect_annotations:
+                gt_list = [box for box in boxes['boxes'] if box['annotation'] in self.filter_arr]
+                pred_list = [box for box in pred_boxes['boxes'] if box['confidence'] >= self.min_confidence]
+                min_dist = .5
+                for pred_box in pred_list:
+                    for gt_box in gt_list:
+                        dist = utils.box_dist(pred_box, gt_box)
+                        #if the box is within the distance cuttoff, but has the wrong annotation, we render both the gt box and predicted box
+                        if dist <= min_dist and pred_box['annotation'] not in self.pred_filter_arr:
+                            incorrect_annotation_map[gt_box['annotation']] = incorrect_annotation_map.get(gt_box['annotation'], 0) + 1
+
+            ####################
+
+
+
+
+            #If we found any specified incorrect annotations then we create a collapsable widget for this frame
+            if unmatched_map or false_positive_map or incorrect_annotation_map:
+                frame_vert = gui.CollapsableVert("Frame " + str(j), .25 * em, margin)
+                frame_vert.set_is_open(False)
+                for key in unmatched_map.keys():
+                    message = gui.Label(str(unmatched_map[key]) + " Unmatched Boxes for GT Label: " + str(key))
+                    frame_vert.add_child(message)
+
+                for key in false_positive_map.keys():
+                    message = gui.Label(str(false_positive_map[key]) + " False Positives for Pred Label: " + str(key))
+                    frame_vert.add_child(message)
+
+                for key in incorrect_annotation_map.keys():
+                    message = gui.Label(str(incorrect_annotation_map[key]) + " Incorrect Annotations for GT Label: " + str(key))
+                    frame_vert.add_child(message)
+                error_count += 1
+                layout.add_child(frame_vert)
+            
+                
+
+        if error_count == 0:
+            message = gui.Label("No Errors Found")
+            layout.add_child(message)
+        window.add_child(layout)
+      
+
+
+    def on_error_export(self):
+        dialog = gui.Dialog("Test2")
+        close_dialog = gui.Button("Close")
+        close_dialog.set_on_clicked(self.close_dialog)
+        em = self.controls.theme.font_size
+        margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
+        layout = gui.Vert(0, margin)
+
+        message = gui.Label("This is a test of what happens lol")
+
+        
+        layout.add_child(close_dialog)
+        layout.add_child(message)
+        layout.add_child(message)
+        layout.add_child(message)
+        layout.add_child(message)
+        layout.add_child(message)
+        layout.add_child(message)
+
+        dialog.add_child(layout)
+
+
+        self.controls.show_dialog(dialog)
+
+    def close_dialog(self):
+        self.controls.close_dialog()
+    
     def update(self):
         """ This updates the window object to reflect the current state
         Args:

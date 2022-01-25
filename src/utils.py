@@ -221,6 +221,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         confidence: list of length n of integers where every element is a value from 0-100 representing the confidence percentage
             should be 101 for ground truth.
         origins, sizes, rotations, annotation_names, confidences should all be the same size
+        predicted: Optional argument that specifies that this data is predicted data
     Returns:
         None
         """
@@ -247,7 +248,7 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
 
     # Creates JSON file that stores all the boxes in a frame 
 
-    json_name = 'boxes' + '.json'
+    json_name = 'boxes.json'
     json_path = os.path.join(full_path, json_name)
     box_data = {}
     box_data['boxes'] = []
@@ -263,7 +264,19 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
     with open(json_path, 'w') as f:
         json.dump(box_data, f)
 
+def create_annotation_map(path, annotation_map):
+    """Specifies the correct relationship between GT annotation names and Predicted names.
+    Args:
+        path: path to LCT dir
+        annotation_map: dictionary that represents correct annotation mapping where the key is a GT annotation name that points
+            to a list of corresponding predicted names. ex: annotation_map['vehicle.car'] = [car].
+    """
+    json_name = 'annotation_map.json'
+    json_path = os.path.join(path, 'pred_bounding', json_name)
+    with open(json_path, 'w') as f:
+        json.dump(annotation_map, f)
 
+        
 def create_ego_directory(path, frame, translation, rotation):
     """Adds ego data for one frame
     Args:
