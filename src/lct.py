@@ -124,7 +124,6 @@ class Window:
         if os.path.exists(os.path.join(self.lct_path, "pred_bounding", "annotation_map.json")):
             self.annotation_map = json.load(open(os.path.join(self.lct_path, "pred_bounding", "annotation_map.json")))
 
-        print(self.annotation_map)
         # Aliases for easier referencing
         cw = self.controls
         pw = self.pointcloud_window
@@ -139,7 +138,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.Material()
+        self.mat = rendering.MaterialRecord()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -452,8 +451,6 @@ class Window:
 
         #Array that will hold list of boxes that will eventually be rendered
         self.boxes_to_render = []
-        print(self.filter_arr)
-        print(self.pred_filter_arr)
         #
         self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
         #Update the counters for the gt boxes
@@ -589,7 +586,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         
         i = 0
-        mat = rendering.Material()
+        mat = rendering.MaterialRecord()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
@@ -651,7 +648,6 @@ class Window:
         self.image_intrinsic = json.load(open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "intrinsics.json")))
         self.image_extrinsic = json.load(open(os.path.join(self.lct_path, "cameras" , self.rgb_sensor_name, "extrinsics.json")))
         self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
-        print(self.image_extrinsic)
         self.pcd_extrinsic = {}
         # iterates over pointcloud paths that are currently stored
         for sensor_idx, path in enumerate(self.pcd_paths):
