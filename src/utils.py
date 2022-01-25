@@ -40,6 +40,8 @@ def translation_and_rotation(transform_matrix):
 
     # Convert rotation matrix to a quaternion
     quat = R.from_matrix(rotation_matrix)
+    
+    #Change quaternion from (x,y,z,w) to (w,x,y,z) which is what LVT wants
     rotation = (quat.as_quat()[3], quat.as_quat()[0], quat.as_quat()[1], quat.as_quat()[2])
     
     return translation, rotation

@@ -397,6 +397,7 @@ class Window:
             box.translate(-np.array(self.image_extrinsic['translation']))
             box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
             
+            #Thank you to Oscar Beijbom for providing this box rendering algorithm at https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
             if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h), BoxVisibility.ANY):
                 # If the box is in view, then render it onto the PLT frame
                 corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
