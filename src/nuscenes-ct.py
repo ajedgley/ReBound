@@ -31,6 +31,7 @@ def parse_options():
     # We can make scene_names a list so that it either includes the name of one scene or every scene a user wants to batch process
     scene_names = []
     pred_path = ""
+    ver_name = ""
     # Read in flags passed in with command line argument
     # Make sure that options which need an argument (namely -f for input file path and -o for output file path) have them
     # User is able to specify -h, -f, -o, -s, and -r options
@@ -39,7 +40,7 @@ def parse_options():
     # corresponds to a directory containing all the .tfrecord files you'd like to read in
     # -o is used to specify the path to the directory where the LVT format will go.
     try:
-        opts, _ = getopt.getopt(sys.argv[1:], "hf:o:s:p:r", "help")
+        opts, _ = getopt.getopt(sys.argv[1:], "hf:o:s:p:rv:", "help")
     except getopt.GetoptError as err:
         print(err)
         sys.exit(2)
@@ -49,6 +50,7 @@ def parse_options():
             print("REQUIRED: -f to specify directory of nuScenes dataset")
             print("REQUIRED: -o to specify the path where the LVT dataset will go")
             print("OPTIONAL: -p to specify a path to projected data")
+            print("REQUIRED: -v to specify the version of this dataset eg: v1.0-mini")
             sys.exit(2)
         elif opt == "-f":
             input_path = arg
@@ -56,21 +58,21 @@ def parse_options():
             if len(input_string) != 0:
                 list_of_scenes = input_string.split(",")
                 scene_names.extend(list_of_scenes)
-            # Debug print statement
-            print(scene_names)
         elif opt == "-o":
             output_path = arg
         elif opt == "-p":
             pred_path = arg
+        elif opt == "-v":
+            ver_name = arg
 
         else:
             print("Invalid set of arguments entered. Please refer to -h flag for more information.")
             sys.exit(2)
 
-    return (input_path, output_path, scene_names, pred_path)
+    return (input_path, output_path, scene_names, pred_path, ver_name)
 
 # Used to check if file is valid nuScenes file
-def validate_input_path(input_path):
+def validate_input_path(input_path, ver_name):
     """Verify that input path given to nuscenes database is valid input
     Args:
         input_path: Path to check before reading into LVT generic format
@@ -81,7 +83,7 @@ def validate_input_path(input_path):
     # Check that the input path exists and is a valid nuScenes database
     try:
         # If input path is invalid as nuScenes database, this constructor will throw an AssertationError
-        NuScenes(version='v1.0-mini', dataroot=input_path, verbose=True)
+        NuScenes(version=ver_name, dataroot=input_path, verbose=True)
         return True
     except AssertionError as error:
         print("Invalid argument passed in as nuScenes file.")
@@ -340,20 +342,22 @@ def convert_dataset(output_path, scene_name, pred_data):
 if __name__ == "__main__":
 
     # Read in input database and output directory paths
-    (input_path, output_path, scene_names, pred_path) = parse_options()
+    (input_path, output_path, scene_names, pred_path,ver_name) = parse_options()
     
     # Validate whether the database path passed in is valid and if the output directory path is valid
     # If the output directory exists, then use that directory. Otherwise, create a new directory at the
     # specified path. 
 
-    if not validate_input_path(input_path):
-        print("Invalid input path specified. Please check paths entered and try again")
+    if not validate_input_path(input_path, ver_name):
+        print("Invalid input path or version name specified. Please check paths or version name entered and try again")
         sys.exit(2)
+    if ver_name == "":
+        print("No version name given")
     pred_data = {}
     if pred_path != "":
         pred_data = json.load(open(pred_path))
 
-    nusc = NuScenes('v1.0-mini', input_path, True)
+    nusc = NuScenes(ver_name, input_path, True)
 
     path = os.getcwd()
 
