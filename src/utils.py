@@ -99,8 +99,8 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
     Args:
         path: path to LCT directory
         name: name of RGB sensor
-        translation: (x,y,z) tuple representing sensor translation
-        rotation: (w,x,y,z) quaternion representing sensor rotation
+        translation: [x,y,z] list representing sensor translation
+        rotation: [w,x,y,z] quaternion representing sensor rotation
         intrinsic: [3,3] 3x3 2D List representing intrinsic matrix
     Returns:
         None
@@ -131,7 +131,7 @@ def add_rgb_frame(path, name, frame_num, image):
         path: path to LCT directory
         name: name of RGB sensor
         frame_num: the number corresponding to the frame
-        images: a buffer containing a JPG image
+        images: a PIL image object containing image data
     Returns:
         None
         """
@@ -172,8 +172,8 @@ def add_lidar_frame(path, name, frame_num, points, translation, rotation):
         name: name of LiDAR sensor
         frame_num: frame number
         points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
-        translation: (x,y,z) tuple representing sensor translation
-        rotation: (w,x,y,z) quaternion representing sensor rotation
+        translation: [x,y,z] list representing sensor translation
+        rotation: [w,x,y,z] quaternion representing sensor rotation
     Returns:
         None
         """
