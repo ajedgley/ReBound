@@ -303,7 +303,7 @@ class Window:
 
         tools_menu = gui.Menu()
         tools_menu.add_item("Scan For Errors",3)
-        tools_menu.add_item("Export Error Report (.csv)", 4)
+    
 
         menu = gui.Menu()
         menu.add_menu("File", file_menu)
@@ -351,19 +351,19 @@ class Window:
         cw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
-        cw.set_on_menu_item_activated(4, self.on_error_export)
+
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         iw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         iw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
-        cw.set_on_menu_item_activated(4, self.on_error_export)
+
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         pw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         pw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
-        cw.set_on_menu_item_activated(4, self.on_error_export)
+    
 
         # Call update function to draw all initial data
         self.update()
@@ -925,7 +925,6 @@ class Window:
     
 
     def on_error_scan(self):
-        dialog = gui.Dialog("Test1")
 
         window = gui.Application.instance.create_window("Errors", 400, 800)
 
@@ -1028,30 +1027,6 @@ class Window:
         window.add_child(layout)
       
 
-
-    def on_error_export(self):
-        dialog = gui.Dialog("Test2")
-        close_dialog = gui.Button("Close")
-        close_dialog.set_on_clicked(self.close_dialog)
-        em = self.controls.theme.font_size
-        margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
-        layout = gui.Vert(0, margin)
-
-        message = gui.Label("This is a test of what happens lol")
-
-        
-        layout.add_child(close_dialog)
-        layout.add_child(message)
-        layout.add_child(message)
-        layout.add_child(message)
-        layout.add_child(message)
-        layout.add_child(message)
-        layout.add_child(message)
-
-        dialog.add_child(layout)
-
-
-        self.controls.show_dialog(dialog)
 
     def close_dialog(self):
         self.controls.close_dialog()
