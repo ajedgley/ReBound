@@ -6,7 +6,7 @@ Conversion tool for bringing data from the waymo dataset into our generic data f
 import getopt
 import sys
 import os
-import utils
+from utils import dataformat_utils
 import json
 from nuscenes.nuscenes import NuScenes
 
@@ -105,7 +105,7 @@ def extract_ego(nusc, sample, frame_num, output_path):
     poserecord = nusc.get('ego_pose', sensor['ego_pose_token'])
 
     full_path = os.path.join(os.getcwd(), output_path)
-    utils.create_ego_directory(full_path, frame_num, poserecord['translation'], poserecord['rotation'])
+    dataformat_utils.create_ego_directory(full_path, frame_num, poserecord['translation'], poserecord['rotation'])
 
 def extract_bounding(nusc, sample, frame_num, output_path):
     """Extracts the bounding data from a nuScenes frame and converts it into our intermediate format
@@ -146,7 +146,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         # Confidence for ground truth data is always 100
         confidences.append(100)
         
-    utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
 def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data):
     """Similar to extract_bounding, but specifically to read in predicted data given by a user
@@ -198,7 +198,7 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pre
             rotations.append(box.orientation.q.tolist())
             annotation_names.append(data['detection_name'])
             confidences.append(int(data['detection_score'] * 100))
-        utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, True)
+        dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, True)
         frame_num += 1
 
 def extract_rgb(nusc, sample, frame_num, target_path):
@@ -215,7 +215,7 @@ def extract_rgb(nusc, sample, frame_num, target_path):
     # For each camera sensor
     for camera in camera_list:
         (path, _, _) = nusc.get_sample_data(sample['data'][camera])
-        utils.add_rgb_frame_from_jpg(target_path, camera, frame_num, path)
+        dataformat_utils.add_rgb_frame_from_jpg(target_path, camera, frame_num, path)
 
 def extract_lidar(nusc, sample, frame_num, target_path):
     """Used to extract the LIDAR pointcloud information from the nuScenes dataset
@@ -244,7 +244,7 @@ def extract_lidar(nusc, sample, frame_num, target_path):
     # Reshape points
     points = np.transpose(points.points[:3, :])
 
-    utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
+    dataformat_utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
 
 def count_frames(nusc, sample):
     """Counts frames to use for progress bar
@@ -289,7 +289,7 @@ def setup_annotation_map(target_path):
     annotation_map['vehicle.truck'] = ['truck']
 
 
-    utils.create_annotation_map(target_path, annotation_map)
+    dataformat_utils.create_annotation_map(target_path, annotation_map)
 
 
 def convert_dataset(output_path, scene_name, pred_data):
@@ -309,10 +309,10 @@ def convert_dataset(output_path, scene_name, pred_data):
     for camera in camera_list:
         sensor = nusc.get('sample_data', sample['data'][camera])
         cs_record = nusc.get('calibrated_sensor', sensor['calibrated_sensor_token'])
-        utils.create_rgb_sensor_directory(output_path, camera, cs_record['translation'], cs_record['rotation'], cs_record['camera_intrinsic'])
+        dataformat_utils.create_rgb_sensor_directory(output_path, camera, cs_record['translation'], cs_record['rotation'], cs_record['camera_intrinsic'])
 
     # Set up LiDAR directory
-    utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
+    dataformat_utils.create_lidar_sensor_directory(output_path, "LIDAR_TOP")
 
     if pred_data != {}:
         print('Extracting predicted bounding boxes...')
@@ -322,7 +322,7 @@ def convert_dataset(output_path, scene_name, pred_data):
 
     # Setup progress bar
     frame_count = count_frames(nusc, sample)
-    utils.print_progress_bar(0, frame_count)
+    dataformat_utils.print_progress_bar(0, frame_count)
 
     setup_annotation_map(output_path)
 
@@ -336,7 +336,7 @@ def convert_dataset(output_path, scene_name, pred_data):
         extract_lidar(nusc, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
-        utils.print_progress_bar(frame_num, frame_count)
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
 
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
@@ -375,7 +375,7 @@ if __name__ == "__main__":
     # Users can then point to the output folder they want to use when running lct.py
     # Setting our output_path to be the parent directory for all these output folders
     for scene_name in scene_names:
-        utils.create_lct_directory(output_path, scene_name)
+        dataformat_utils.create_lct_directory(output_path, scene_name)
                 
     nusc.list_scenes()
     

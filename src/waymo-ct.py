@@ -6,9 +6,9 @@ Conversion tool for bringing data from the waymo dataset into our generic data f
 import sys
 import getopt
 import os
-import utils
+from utils import geometry_utils
+from utils import dataformat_utils
 from waymo_open_dataset.utils import frame_utils
-from waymo_open_dataset.utils import transform_utils
 import tensorflow as tf
 from waymo_open_dataset import dataset_pb2 as open_dataset
 import numpy as np
@@ -107,7 +107,7 @@ def extract_bounding(frame, frame_num, lct_path):
         rotations.append(quat.q.tolist())
         # Confidence set to 100 by default for ground truth data
         confidences.append(100)
-    utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+    dataformat_utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
 def setup_rgb(frame, lct_path):
     """Sets up the RGB directory with extrinsic data
@@ -139,9 +139,9 @@ def setup_rgb(frame, lct_path):
                 [0,0,0,1]])
         axes_transformation = np.linalg.inv(axes_transformation)
         transform_matrix = np.matmul(camera_data_ext[RGB_Name[image.name]], axes_transformation)
-        translation, rotation_quats = utils.translation_and_rotation(transform_matrix.tolist())
+        translation, rotation_quats = geometry_utils.translation_and_rotation(transform_matrix.tolist())
         # Create directory for camera
-        utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
+        dataformat_utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
 
 def extract_rgb(frame, frame_num, lct_path):
     """Extracts the RGB data from a waymo frame and converts it into our intermediate format
@@ -155,7 +155,7 @@ def extract_rgb(frame, frame_num, lct_path):
 
     # Add image files to respective camera directory
     for image in frame.images:
-        utils.add_rgb_frame(lct_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
+        dataformat_utils.add_rgb_frame(lct_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
 
 def setup_lidar(frame, lct_path, translations, rotations):
     """Uses the first frame to initialize LiDAR directory and store extrinsic data
@@ -174,11 +174,11 @@ def setup_lidar(frame, lct_path, translations, rotations):
         sensor = c.name
 
         # Set up the folder for each sensor
-        utils.create_lidar_sensor_directory(lct_path, Lidar_Name[sensor])
+        dataformat_utils.create_lidar_sensor_directory(lct_path, Lidar_Name[sensor])
         transform_matrix = c.extrinsic.transform
 
         # The transaltion matrices are the same for each frame, so this computation is only run once
-        translation, rotation = utils.translation_and_rotation(transform_matrix)
+        translation, rotation = geometry_utils.translation_and_rotation(transform_matrix)
         translations[sensor] = translation
         rotations[sensor] = rotation
 
@@ -202,7 +202,7 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
     for i, points in enumerate(point_clouds):
         # Sensor numbers are indexed from 1 in Waymo
         sensor = i+1
-        utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translations[sensor], rotations[sensor])
+        dataformat_utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translations[sensor], rotations[sensor])
 
 def extract_ego(frame, frame_num, lct_path):
     """Extracts ego data from one frame and puts it in the lct file system
@@ -213,8 +213,8 @@ def extract_ego(frame, frame_num, lct_path):
     Returns:
         None
         """
-    translation, rotation_quats = utils.translation_and_rotation(frame.pose.transform)
-    utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
+    translation, rotation_quats = geometry_utils.translation_and_rotation(frame.pose.transform)
+    dataformat_utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
 
 def count_frames(dataset):
     """counts frames in dataset to use for progress bar
@@ -239,7 +239,7 @@ def convert_dataset(output_path, dataset):
     futures = []
 
     # start progress bar
-    utils.print_progress_bar(0, frame_count)
+    geometry_utils.print_progress_bar(0, frame_count)
     # Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
@@ -262,7 +262,7 @@ def convert_dataset(output_path, dataset):
     for frame in futures:
         concurrent.futures.wait(frame, return_when=concurrent.futures.ALL_COMPLETED)
         frame_num += 1
-        utils.print_progress_bar(frame_num, frame_count)
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
 
 if __name__ == "__main__":
     (input_path, output_path, batch_processing) = parse_options()
@@ -294,9 +294,9 @@ if __name__ == "__main__":
     # Setting our output_path to be the parent directory for all these output folders
     if batch_processing:
         for item_name in batch_items:
-            utils.create_lct_directory(output_path, item_name)
+            dataformat_utils.create_lct_directory(output_path, item_name)
     else:
-        utils.create_lct_directory(output_path, "")
+        dataformat_utils.create_lct_directory(output_path, "")
 
     # Extract data from TFRecord File
     datasets = []

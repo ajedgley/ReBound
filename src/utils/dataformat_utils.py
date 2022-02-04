@@ -1,7 +1,8 @@
 """
-utils.py
+dataformat_utils.py
 
-Utils for creating LCT Directory
+Functions for creating conversion tools
+
 """
 import os
 import sys
@@ -19,58 +20,6 @@ ROTATION = 2
 ANNOTATION = 3
 CONFIDENCE = 4
 COLOR = 5
-
-def translation_and_rotation(transform_matrix):
-    """Converts tranformation matrix to a translation and rotation our conversion scripts can use
-    Args:
-        transform_matrix: 1x16 list representing a 4x4 transform matrix
-    
-    Returns:
-        translation: 1x3 translation vector
-        rotation: 1x4 rotation quaternion
-    """
-
-    transform_array = np.array(transform_matrix).reshape(4, 4)
-
-    # Extract the first 3 entries in the last column as the translation
-    translation = tuple(transform_array[:3, -1])
-
-    # Extract the 3x3 rotation matrix from the upper left
-    rotation_matrix = transform_array[:3, :3]
-
-    # Convert rotation matrix to a quaternion
-    quat = R.from_matrix(rotation_matrix)
-    
-    #Change quaternion from (x,y,z,w) to (w,x,y,z) which is what LVT wants
-    rotation = (quat.as_quat()[3], quat.as_quat()[0], quat.as_quat()[1], quat.as_quat()[2])
-    
-    return translation, rotation
-
-def print_progress_bar(frame_num, total):
-    """Prints a progress bar
-    Args:
-        frame_num: current frame number
-        total: number of frames
-    Returns:
-        None
-        """
-
-    length = 40
-
-    # Adjust size of progress bar based on console size
-    if os.get_terminal_size()[0] < 50:
-        length = 10
-    elif os.get_terminal_size()[0] < 70:
-        length = 20
-    
-    filled_length = (length * frame_num//total)
-    bar = '█' * filled_length + '-' * (length - filled_length)
-    print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
-    
-    # After progress is complete run a new line
-    if frame_num == total: 
-        print()
-
 
 def create_lct_directory(path, name):
     """Create top level LCT directory at specified path
@@ -303,188 +252,28 @@ def create_ego_directory(path, frame, translation, rotation):
 
 
 
-def is_lct_directory(path):
-    """Tests to see if specified directory conforms to LCT spec
+
+def print_progress_bar(frame_num, total):
+    """Prints a progress bar
     Args:
-        path: path to LCT directory
+        frame_num: current frame number
+        total: number of frames
     Returns:
-        is_verified: True if LCT directory is valid or False if not
-    """
+        None
+        """
 
-    # Individual verification bools
-    cameras_exist = os.path.exists(os.path.join(path, "cameras"))
-    inside_cameras_valid = check_inside_cameras(os.path.join(path, "cameras"))
-    pointcloud_exists = os.path.exists(os.path.join(path, "pointcloud"))
-    inside_pointcloud_valid = check_inside_pointcloud(os.path.join(path, "pointcloud"))
-    bounding_exists = os.path.exists(os.path.join(path, "bounding"))
-    inside_bounding_valid = check_inside_bounding(os.path.join(path, "bounding"))
-    ego_exists = os.path.exists(os.path.join(path, "ego"))
-    inside_ego_valid = check_inside_ego(os.path.join(path, "ego"))
-    predicted_exists = os.path.exists(os.path.join(path, "pred_bounding"))
+    length = 40
 
-
-    # Overall verification bool
-    is_verified = True
-
-    # Provides feedback to the user
-    if not cameras_exist:
-        print("There is no directory named \"cameras\" at the selected path.\n")
-        is_verified = False
-    if not inside_cameras_valid:
-        is_verified = False
-    if not pointcloud_exists:
-        print("There is no directory named \"pointcloud\" at the selected path. \n")
-        is_verified = False
-    if not inside_pointcloud_valid:
-        is_verified = False
-    if not bounding_exists:
-        print("There is no directory named \"bounding\" at the selected path. \n")
-        is_verified = False
-    if not inside_bounding_valid:
-        is_verified = False
-    if not ego_exists:
-        print("There is no directory named \"ego\" at the selected path. \n")
-        is_verified = False
-    if not inside_ego_valid:
-        is_verified = False
-    if not predicted_exists:
-        print("There is no directory named \"pred_bounding\" at the selected path. \n")
-        is_verified = False
-
-    return is_verified
-
-
-
-def check_inside_cameras(path):
-    """Checks to make sure that all the subdirectories of cameras only have Extrinsic.json, Intrinsic.json and .jpg files
-    Prints out reason for invalidity if one exists
-    Args:
-        path: path to cameras directory
-    Returns:
-        is_verified: false if not valid and true otherwise
-    """
-
-    is_verified = True
+    # Adjust size of progress bar based on console size
+    if os.get_terminal_size()[0] < 50:
+        length = 10
+    elif os.get_terminal_size()[0] < 70:
+        length = 20
     
-    # Cameras
-    for dir in os.listdir(path):
-        has_in = False
-        has_ex = False
-        has_jpg = True
-        # Files in cameras
-        for file in os.listdir(os.path.join(path, dir)):
-            if file == "Extrinsics.JSON": 
-                if not has_ex: 
-                    has_ex = True
-                else:
-                    is_verified = False
-                    print("directory " + dir + " has multiple Extrinsics.JSON files")
-            elif file == "Intrinsics.JSON":
-                if not has_in:
-                    has_in = True
-                else:
-                    is_verified = False
-                    print("directory " + dir + " has multiple Intrinsics.JSON files")
-            else:
-                extension = file[-4:]
-                if extension != ".jpg":
-                    is_verified = False
-                    print("There are files in " + dir + "that are not Intrinsics.JSON, Extrinsics.JSON or .jpgs")
+    filled_length = (length * frame_num//total)
+    bar = '█' * filled_length + '-' * (length - filled_length)
+    print(f'\rConverting: {bar} {frame_num}/{total} frames', end = '\r')
     
-    return is_verified
-
-
-def check_inside_pointcloud(path):
-    """Checks to make sure that all the subdirectories of pointcloud only have .pcd files
-    Prints out reason for invalidity if one exists
-    Args:
-        path: path to pointcloud directory
-    Returns:
-        is_verified: false if not valid and true otherwise
-    """
-
-    is_verified = True
-
-    for dir in os.listdir(path):
-        for file in os.listdir(os.path.join(path, dir)):
-            extension = file[-4:]
-            if extension != ".pcd":
-                is_verified = False
-                print("There is a file in " + dir + " that is not a .pcd file")
-    
-    return is_verified
-
-def check_inside_bounding(path):
-    """Checks to make sure that all the subdirectories of bounding are properly formatted
-       Prints out the reason for invalidity if one exists
-       Args:
-           path: path to bounding directory
-       Returns:
-           is_verified: false if not valid and true otherwise    
-    """
-    
-    
-    is_verified = True
-
-    # Loop through frames
-    for dir in os.listdir(path):
-        has_description = False
-        has_boxes = False
-        # Loop through files in frame
-        for file in os.listdir(os.path.join(path, dir)):
-            if has_boxes and has_description:
-                is_verified = False
-                print("directory " + dir + " has multiple description.JSON/boxes.json files")
-            elif file == "description.json":
-                has_description = True
-            elif file == "boxes.json":
-                has_boxes = True
-            else:
-                is_verified = False
-        
-        if not has_boxes and not has_description:
-            is_verified = False
-            print("There is not a description.json and a boxes.json file in the " + dir + " directory")
-
-    return is_verified
-
-def check_inside_ego(path):
-    """Checks to makes sure that all the subdirectories of ego are properly formatted
-       Prints out the reason for invalidity if one exists
-       Args:
-            path: path to the ego directory
-       Returns: 
-            is_verified: false if not valid and true otherwise 
-    """
-
-    is_verified = True
-
-    for file in os.listdir(path):
-        if not file[-4:] == ".JSON":
-            is_verified = False
-            print("There is a file in the ego directory that is not a json file")
-
-    return is_verified
-
-#Returns true if two axis-aligned 3D bounding boxes are overlapping
-def is_overlapping(box1, box2):
-    #Inspiration taken from https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection
-    o1 = box1[ORIGIN]
-    s1 = box1[SIZE]
-    o2 = box2[ORIGIN]
-    s2 = box2[SIZE]
-    #loop through x, y, z axes
-    for i in range(3):
-        a_max = o1[i] + (s1[i]/2)
-        a_min = o1[i] - (s1[i]/2)
-        b_max = o2[i] + (s2[i]/2)
-        b_min = o2[i] - (s2[i]/2)
-        if not (a_min <= b_max and a_max >= b_min):
-            return False
-    return True
-
-def box_dist(box1, box2):
-    d_x = (box1['origin'][0] - box2['origin'][0]) ** 2
-    d_y = (box1['origin'][1] - box2['origin'][1]) ** 2
-    d_z = (box1['origin'][2] - box2['origin'][2]) ** 2
-    return math.sqrt(d_x + d_y + d_z)
+    # After progress is complete run a new line
+    if frame_num == total: 
+        print()

@@ -20,7 +20,8 @@ import cv2
 from nuscenes.utils.data_classes import Box
 from pyquaternion import Quaternion
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
-import utils
+
+from utils import geometry_utils
 from operator import itemgetter
 import platform
 
@@ -517,7 +518,7 @@ class Window:
             for (pred_idx,pred_box) in enumerate(sorted_list):
                 dist = float('inf')
                 for (i, gt_box) in enumerate(gt_list):
-                    temp_dist = utils.box_dist(pred_box, gt_box)
+                    temp_dist = geometry_utils.box_dist(pred_box, gt_box)
                     if not gt_matched[i]:
                         if temp_dist < dist:
                             dist = temp_dist
@@ -547,7 +548,7 @@ class Window:
             min_dist = .5
             for pred_box in pred_list:
                 for gt_box in gt_list:
-                    dist = utils.box_dist(pred_box, gt_box)
+                    dist = geometry_utils.box_dist(pred_box, gt_box)
                     #if the box is within the distance cuttoff, but has the wrong annotation, we render both the gt box and predicted box
                     if dist <= min_dist and pred_box['annotation'] not in self.pred_filter_arr:
                         self.boxes_to_render.append([pred_box['origin'], pred_box['size'], pred_box['rotation'], pred_box['annotation'], pred_box['confidence'], self.pred_color_map[pred_box['annotation']]])
@@ -963,7 +964,7 @@ class Window:
                 for (pred_idx,pred_box) in enumerate(sorted_list):
                     dist = float('inf')
                     for (i, gt_box) in enumerate(gt_list):
-                        temp_dist = utils.box_dist(pred_box, gt_box)
+                        temp_dist = geometry_utils.box_dist(pred_box, gt_box)
                         if not gt_matched[i]:
                             if temp_dist < dist:
                                 dist = temp_dist
@@ -991,7 +992,7 @@ class Window:
                 min_dist = .5
                 for pred_box in pred_list:
                     for gt_box in gt_list:
-                        dist = utils.box_dist(pred_box, gt_box)
+                        dist = geometry_utils.box_dist(pred_box, gt_box)
                         #if the box is within the distance cuttoff, but has the wrong annotation, we render both the gt box and predicted box
                         if dist <= min_dist and pred_box['annotation'] not in self.pred_filter_arr:
                             incorrect_annotation_map[gt_box['annotation']] = incorrect_annotation_map.get(gt_box['annotation'], 0) + 1
