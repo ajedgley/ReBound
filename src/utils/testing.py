@@ -5,13 +5,7 @@ Testing functions to validate LVT directories
 
 """
 import os
-import sys
-import json
-import PIL
-import numpy as np
-from shutil import copyfile
-from scipy.spatial.transform import Rotation as R
-import math
+
 
 def is_lct_directory(path):
     """Tests to see if specified directory conforms to LCT spec
