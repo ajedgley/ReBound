@@ -24,7 +24,7 @@ Our app aims to provide researchers with the necessary tools to easily visualize
 
 
 
-### Docs: [GitBook](https://app.gitbook.com/s/LwXJQFLIM5IJpwSLEYfC/)
+### Docs: [GitBook](https://nicolas-revilla.gitbook.io/lvt/)
 
 
 
