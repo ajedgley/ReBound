@@ -10,7 +10,6 @@ import json
 import PIL
 import numpy as np
 from shutil import copyfile
-from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
 import math
 
