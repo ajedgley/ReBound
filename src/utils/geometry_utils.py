@@ -44,10 +44,10 @@ def translation_and_rotation(transform_matrix):
 #Returns true if two axis-aligned 3D bounding boxes are overlapping
 def is_overlapping(box1, box2):
     #Algorithm taken from https://developer.mozilla.org/en-US/docs/Games/Techniques/3D_collision_detection
-    o1 = box1[ORIGIN]
-    s1 = box1[SIZE]
-    o2 = box2[ORIGIN]
-    s2 = box2[SIZE]
+    o1 = box1['origin']
+    s1 = box1['size']
+    o2 = box2['origin']
+    s2 = box2['size']
     #loop through x, y, z axes
     for i in range(3):
         a_max = o1[i] + (s1[i]/2)
