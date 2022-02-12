@@ -7,6 +7,7 @@ Functions for creating conversion tools
 import os
 import sys
 import json
+import PIL
 from shutil import copyfile
 
 
@@ -46,7 +47,7 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         name: name of RGB sensor
         translation: [x,y,z] list representing sensor translation
         rotation: [w,x,y,z] quaternion representing sensor rotation
-        intrinsic: [3,3] 3x3 2D List representing intrinsic matrix
+        intrinsic: [3,3] 3x3 matrix representing intrinsic matrix
     Returns:
         None
         """
@@ -80,9 +81,7 @@ def add_rgb_frame(path, name, frame_num, image):
     Returns:
         None
         """
-
-    image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
-    str(frame_num) +".jpg"))
+    image.save(os.path.join(path, "cameras", name, f"{str(frame_num)}.jpg"))
 
 def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     """Copies existing jpg file into the cameras directory

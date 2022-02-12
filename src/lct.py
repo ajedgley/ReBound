@@ -139,7 +139,10 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        if o3d.__version__ == "0.14.1":
+            self.mat = rendering.MaterialRecord()
+        else:
+            self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -559,7 +562,7 @@ class Window:
 
     def update_pointcloud(self):
         """Takes new pointcloud data and converts it to global frame, 
-           then renders the bounding boxes (Assuming the boxes are already in global frame)
+           then renders the bounding boxes (Assuming the boxes are vehicle frame
             Args:
                 self: window object
             Returns:
@@ -575,33 +578,34 @@ class Window:
 
         for i, pcd_path in enumerate(self.pcd_paths):
             temp_cloud = o3d.io.read_point_cloud(pcd_path)
-            # sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
             ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
 
             # Transform lidar points into global frame
             temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
-            temp_cloud.translate(self.frame_extrinsic['translation'])
+            temp_cloud.translate(np.array(self.frame_extrinsic['translation']))
             temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
  
         self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
         # Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
-        
+        self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        if o3d.__version__ == "0.14.1":
+            mat = rendering.MaterialRecord()
+        else:
+            mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
             size = [0,0,0]
-            # We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
-            # in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
+            # Open3D wants sizes in L,W,H
             size[0] = box[SIZE][1]
             size[1] = box[SIZE][0]
             size[2] = box[SIZE][2]
             color = box[COLOR]
             bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
             bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-            bounding_box.translate(self.frame_extrinsic['translation'])
+            bounding_box.translate(np.array(self.frame_extrinsic['translation']))
             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
             bounding_box.color = matplotlib.colors.to_rgb(hex)
 

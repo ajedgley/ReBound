@@ -101,7 +101,7 @@ def extract_bounding(frame, frame_num, lct_path):
     # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
     for label in frame.laser_labels:
         origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
-        sizes.append([label.box.width, label.box.length, label.box.height])
+        sizes.append([label.box.length, label.box.width, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)
         rotations.append(quat.q.tolist())
@@ -131,15 +131,20 @@ def setup_rgb(frame, lct_path):
     
     # Create directory for each camera in scene
     for image in frame.images:
-        # Convert given extrinsic data into format we can use 
+        # Waymo uses x,y,z = front,left, up
+        # But we need x,y,z = right, down, front
+        # So we use the axes_transform matrix to also add the 
         axes_transformation = np.array([
                 [0,-1,0,0],
                 [0,0,-1,0],
                 [1,0,0,0],
                 [0,0,0,1]])
+        #Waymo Gives the extrinsic data to transform from sensor frame to vehicle frame, but we need vehicle to sensor
+        #So take the inverse
         axes_transformation = np.linalg.inv(axes_transformation)
+
         transform_matrix = np.matmul(camera_data_ext[RGB_Name[image.name]], axes_transformation)
-        translation, rotation_quats = geometry_utils.translation_and_rotation(transform_matrix.tolist())
+        translation, rotation_quats = geometry_utils.translation_and_rotation(np.array(transform_matrix).reshape(4, 4))
         # Create directory for camera
         dataformat_utils.create_rgb_sensor_directory(lct_path, RGB_Name[image.name], translation, rotation_quats, camera_data_int[RGB_Name[image.name]])
 
@@ -155,7 +160,7 @@ def extract_rgb(frame, frame_num, lct_path):
 
     # Add image files to respective camera directory
     for image in frame.images:
-        dataformat_utils.add_rgb_frame(lct_path, RGB_Name[image.name], PIL.Image.open(io.BytesIO(image.image)), frame_num)
+        dataformat_utils.add_rgb_frame(lct_path, RGB_Name[image.name],frame_num ,PIL.Image.open(io.BytesIO(image.image)))
 
 def setup_lidar(frame, lct_path, translations, rotations):
     """Uses the first frame to initialize LiDAR directory and store extrinsic data
@@ -178,7 +183,7 @@ def setup_lidar(frame, lct_path, translations, rotations):
         transform_matrix = c.extrinsic.transform
 
         # The transaltion matrices are the same for each frame, so this computation is only run once
-        translation, rotation = geometry_utils.translation_and_rotation(transform_matrix)
+        translation, rotation = geometry_utils.translation_and_rotation(np.array(transform_matrix).reshape(4, 4))
         translations[sensor] = translation
         rotations[sensor] = rotation
 
@@ -213,7 +218,7 @@ def extract_ego(frame, frame_num, lct_path):
     Returns:
         None
         """
-    translation, rotation_quats = geometry_utils.translation_and_rotation(frame.pose.transform)
+    translation, rotation_quats = geometry_utils.translation_and_rotation(np.array(frame.pose.transform).reshape(4,4))
     dataformat_utils.create_ego_directory(lct_path, frame_num, translation, rotation_quats)
 
 def count_frames(dataset):
@@ -239,12 +244,11 @@ def convert_dataset(output_path, dataset):
     futures = []
 
     # start progress bar
-    geometry_utils.print_progress_bar(0, frame_count)
+    dataformat_utils.print_progress_bar(0, frame_count)
     # Loop through each frame
     for frame_num, data in enumerate(dataset):
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
-
         if frame_num == 0:
             setup_rgb(frame, output_path)
             setup_lidar(frame, output_path, translations, rotations)
