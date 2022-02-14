@@ -101,7 +101,7 @@ def extract_bounding(frame, frame_num, lct_path):
     # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
     for label in frame.laser_labels:
         origins.append([label.box.center_x, label.box.center_y, label.box.center_z])
-        sizes.append([label.box.length, label.box.width, label.box.height])
+        sizes.append([label.box.width, label.box.length, label.box.height])
         annotation_names.append(annotation_dict[label.type])
         quat = Quaternion(axis=[0.0, 0.0, 1.0], radians=label.box.heading)
         rotations.append(quat.q.tolist())
@@ -207,7 +207,7 @@ def extract_lidar(frame, frame_num, lct_path, translations, rotations):
     for i, points in enumerate(point_clouds):
         # Sensor numbers are indexed from 1 in Waymo
         sensor = i+1
-        dataformat_utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points, translations[sensor], rotations[sensor])
+        dataformat_utils.add_lidar_frame(lct_path, Lidar_Name[sensor], frame_num, points)
 
 def extract_ego(frame, frame_num, lct_path):
     """Extracts ego data from one frame and puts it in the lct file system

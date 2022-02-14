@@ -245,7 +245,7 @@ def extract_lidar(nusc, sample, frame_num, target_path):
     # Reshape points
     points = np.transpose(points.points[:3, :])
 
-    dataformat_utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
+    dataformat_utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points)
 
 def count_frames(nusc, sample):
     """Counts frames to use for progress bar

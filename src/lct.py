@@ -22,6 +22,7 @@ from pyquaternion import Quaternion
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
 
 from utils import geometry_utils
+from utils import testing
 from operator import itemgetter
 import platform
 
@@ -654,19 +655,6 @@ class Window:
         self.image_intrinsic = json.load(open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "intrinsics.json")))
         self.image_extrinsic = json.load(open(os.path.join(self.lct_path, "cameras" , self.rgb_sensor_name, "extrinsics.json")))
         self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
-        self.pcd_extrinsic = {}
-        # iterates over pointcloud paths that are currently stored
-        for sensor_idx, path in enumerate(self.pcd_paths):
-            fp = open(os.path.join(path))
-            for i, line in enumerate(fp):
-                if i == 8:
-                    # setting translation and rotation arrays based on new pointcloud
-                    vals = line.split()
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]] = {}
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['translation'] = [float(vals[1]), float(vals[2]), float(vals[3])]
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['rotation'] = [float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7])]
-            fp.close()
-
     def on_sensor_select(self, new_val, new_idx):
         """This updates the name of the selected rgb sensor after user input
            Updates the window with the new information 
@@ -943,8 +931,12 @@ class Window:
 
         for j in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
-            pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
-
+            try:
+                pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
+            except FileNotFoundError:
+                layout.add_child(gui.Label("Error reading predicted data"))
+                window.add_child(layout)
+                return
             unmatched_map = {}
             false_positive_map = {}
             incorrect_annotation_map = {}
@@ -1075,6 +1067,11 @@ class Window:
 
 if __name__ == "__main__":
     lct_dir = parse_options()
+
+    #Before initializing windows, test the given directory to make sure it conforms to our specifications
+    if not testing.is_lct_directory(lct_dir):
+        sys.exit("Given directory is not an LVT directory")
+
     gui.Application.instance.initialize()
     w = Window(lct_dir)
     o3d.visualization.gui.Application.instance.run()
