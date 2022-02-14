@@ -348,12 +348,10 @@ if __name__ == "__main__":
     # Validate whether the database path passed in is valid and if the output directory path is valid
     # If the output directory exists, then use that directory. Otherwise, create a new directory at the
     # specified path. 
-
-    if not validate_input_path(input_path, ver_name):
-        print("Invalid input path or version name specified. Please check paths or version name entered and try again")
-        sys.exit(2)
     if ver_name == "":
-        print("No version name given")
+        sys.exit("No version name given")
+    if not validate_input_path(input_path, ver_name):
+        sys.exit("Invalid input path or version name specified. Please check paths or version name entered and try again")
     pred_data = {}
     if pred_path != "":
         pred_data = json.load(open(pred_path))
