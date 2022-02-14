@@ -1,5 +1,5 @@
 """
-utils.py
+geometry_utils.py
 
 General use geometry utils
 """
@@ -18,20 +18,18 @@ COLOR = 5
 def translation_and_rotation(transform_matrix):
     """Converts tranformation matrix to a translation and rotation our conversion scripts can use
     Args:
-        transform_matrix: 1x16 list representing a 4x4 transform matrix
+        transform_matrix: 4x4 transform matrix as a numpy array
     
     Returns:
         translation: 1x3 translation vector
         rotation: 1x4 rotation quaternion
     """
 
-    transform_array = np.array(transform_matrix).reshape(4, 4)
-
     # Extract the first 3 entries in the last column as the translation
-    translation = tuple(transform_array[:3, -1])
+    translation = tuple(transform_matrix[:3, -1])
 
     # Extract the 3x3 rotation matrix from the upper left
-    rotation_matrix = transform_array[:3, :3]
+    rotation_matrix = transform_matrix[:3, :3]
 
     # Convert rotation matrix to a quaternion
     quat = R.from_matrix(rotation_matrix)

@@ -22,6 +22,7 @@ from pyquaternion import Quaternion
 from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
 
 from utils import geometry_utils
+from utils import testing
 from operator import itemgetter
 import platform
 
@@ -139,7 +140,10 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        if o3d.__version__ == "0.14.1":
+            self.mat = rendering.MaterialRecord()
+        else:
+            self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -559,7 +563,7 @@ class Window:
 
     def update_pointcloud(self):
         """Takes new pointcloud data and converts it to global frame, 
-           then renders the bounding boxes (Assuming the boxes are already in global frame)
+           then renders the bounding boxes (Assuming the boxes are vehicle frame
             Args:
                 self: window object
             Returns:
@@ -575,33 +579,34 @@ class Window:
 
         for i, pcd_path in enumerate(self.pcd_paths):
             temp_cloud = o3d.io.read_point_cloud(pcd_path)
-            # sensor_rotation_matrix = R.from_quat(self.pcd_extrinsic[sensor]['rotation']).as_matrix()
             ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
 
             # Transform lidar points into global frame
             temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
-            temp_cloud.translate(self.frame_extrinsic['translation'])
+            temp_cloud.translate(np.array(self.frame_extrinsic['translation']))
             temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
  
         self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
         # Add new global frame pointcloud to our 3D widget
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
-        
+        self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        if o3d.__version__ == "0.14.1":
+            mat = rendering.MaterialRecord()
+        else:
+            mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
             size = [0,0,0]
-            # We have to do this because open3D mixes up the length and the width of the boxes, however the height is still the third element
-            # in other words nuscenes stores box data in [L,W,H] but open3d expects [W,L,H]
+            # Open3D wants sizes in L,W,H
             size[0] = box[SIZE][1]
             size[1] = box[SIZE][0]
             size[2] = box[SIZE][2]
             color = box[COLOR]
             bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
             bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
-            bounding_box.translate(self.frame_extrinsic['translation'])
+            bounding_box.translate(np.array(self.frame_extrinsic['translation']))
             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
             bounding_box.color = matplotlib.colors.to_rgb(hex)
 
@@ -650,19 +655,6 @@ class Window:
         self.image_intrinsic = json.load(open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "intrinsics.json")))
         self.image_extrinsic = json.load(open(os.path.join(self.lct_path, "cameras" , self.rgb_sensor_name, "extrinsics.json")))
         self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
-        self.pcd_extrinsic = {}
-        # iterates over pointcloud paths that are currently stored
-        for sensor_idx, path in enumerate(self.pcd_paths):
-            fp = open(os.path.join(path))
-            for i, line in enumerate(fp):
-                if i == 8:
-                    # setting translation and rotation arrays based on new pointcloud
-                    vals = line.split()
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]] = {}
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['translation'] = [float(vals[1]), float(vals[2]), float(vals[3])]
-                    self.pcd_extrinsic[self.lidar_sensors[sensor_idx]]['rotation'] = [float(vals[4]), float(vals[5]), float(vals[6]), float(vals[7])]
-            fp.close()
-
     def on_sensor_select(self, new_val, new_idx):
         """This updates the name of the selected rgb sensor after user input
            Updates the window with the new information 
@@ -939,8 +931,12 @@ class Window:
 
         for j in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
-            pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
-
+            try:
+                pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
+            except FileNotFoundError:
+                layout.add_child(gui.Label("Error reading predicted data"))
+                window.add_child(layout)
+                return
             unmatched_map = {}
             false_positive_map = {}
             incorrect_annotation_map = {}
@@ -1071,6 +1067,11 @@ class Window:
 
 if __name__ == "__main__":
     lct_dir = parse_options()
+
+    #Before initializing windows, test the given directory to make sure it conforms to our specifications
+    if not testing.is_lct_directory(lct_dir):
+        sys.exit("Given directory is not an LVT directory")
+
     gui.Application.instance.initialize()
     w = Window(lct_dir)
     o3d.visualization.gui.Application.instance.run()

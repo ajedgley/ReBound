@@ -77,13 +77,13 @@ def check_inside_cameras(path):
         has_jpg = True
         # Files in cameras
         for file in os.listdir(os.path.join(path, dir)):
-            if file == "Extrinsics.JSON": 
+            if file == "extrinsics.json": 
                 if not has_ex: 
                     has_ex = True
                 else:
                     is_verified = False
                     print("directory " + dir + " has multiple Extrinsics.JSON files")
-            elif file == "Intrinsics.JSON":
+            elif file == "intrinsics.json":
                 if not has_in:
                     has_in = True
                 else:
@@ -164,7 +164,7 @@ def check_inside_ego(path):
     is_verified = True
 
     for file in os.listdir(path):
-        if not file[-4:] == ".JSON":
+        if not file[-5:] == ".json":
             is_verified = False
             print("There is a file in the ego directory that is not a json file")
 

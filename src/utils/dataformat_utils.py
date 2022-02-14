@@ -7,8 +7,10 @@ Functions for creating conversion tools
 import os
 import sys
 import json
+import PIL
 from shutil import copyfile
-
+import open3d as o3d
+import numpy as np
 
 ORIGIN = 0
 SIZE = 1
@@ -46,7 +48,7 @@ def create_rgb_sensor_directory(path, name, translation, rotation, intrinsic):
         name: name of RGB sensor
         translation: [x,y,z] list representing sensor translation
         rotation: [w,x,y,z] quaternion representing sensor rotation
-        intrinsic: [3,3] 3x3 2D List representing intrinsic matrix
+        intrinsic: [3,3] 3x3 matrix representing intrinsic matrix
     Returns:
         None
         """
@@ -80,9 +82,7 @@ def add_rgb_frame(path, name, frame_num, image):
     Returns:
         None
         """
-
-    image.save(os.path.join(os.path.join(os.path.join(path, "cameras"), name),
-    str(frame_num) +".jpg"))
+    image.save(os.path.join(path, "cameras", name, f"{str(frame_num)}.jpg"))
 
 def add_rgb_frame_from_jpg(path, name, frame_num, input_path):
     """Copies existing jpg file into the cameras directory
@@ -110,37 +110,19 @@ def create_lidar_sensor_directory(path, name):
     full_path = os.path.join(path, 'pointcloud', name)
     os.makedirs(full_path, exist_ok=True)
 
-def add_lidar_frame(path, name, frame_num, points, translation, rotation):
+def add_lidar_frame(path, name, frame_num, points):
     """Adds one lidar sensor directory inside pointcloud directory
     Args:
         path: path to LCT directory
         name: name of LiDAR sensor
         frame_num: frame number
         points: [n, 3] list of (x,y,z) tuples representing x,y,z coordinates
-        translation: [x,y,z] list representing sensor translation
-        rotation: [w,x,y,z] quaternion representing sensor rotation
     Returns:
         None
         """
-
-    # Build a .pcd file line by line
-    # See .pcd file format documentation at https://pointclouds.org/documentation/tutorials/pcd_file_format.html
-    pcd_lines = ['# .PCD v0.7 - Point Cloud Data file format', 'VERSION 0.7', 'FIELDS x y z',
-                'SIZE 4 4 4', 'TYPE F F F', 'COUNT 1 1 1']
-    pcd_lines.append('WIDTH ' + str(len(points)))
-    pcd_lines.append('HEIGHT 1')
-    pcd_lines.append('VIEWPOINT ' + ' '.join([str(i) for i in translation + rotation]))
-    pcd_lines.append('POINTS ' + str(len(points)))
-    pcd_lines.append('DATA ascii')
-    for point in points:
-        pcd_lines.append(' '.join([str(i) for i in point]))
-    
-    pcd_str = '\n'.join(pcd_lines)
-
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
-    
-    with open(full_path, 'w') as f:
-        f.write(pcd_str)
+    pc = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(points)))
+    o3d.io.write_point_cloud(full_path, pc)
 
 def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     """Copies one .pcd file to pointcloud directory

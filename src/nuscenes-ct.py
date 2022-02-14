@@ -134,6 +134,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         sensor = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
         poserecord = nusc.get('ego_pose', sensor['ego_pose_token'])
         
+        #Transform the boxes from global frame to vehicle frame
         box.translate(-np.array(poserecord['translation']))
         box.rotate(Quaternion(poserecord['rotation']).inverse)
 
@@ -237,14 +238,14 @@ def extract_lidar(nusc, sample, frame_num, target_path):
     translation = cs_record['translation']
     rotation = cs_record['rotation']
 
-    # Transform points to Vehicle Frame
+    # Transform points from lidar frame to vehicle frame
     points.rotate(Quaternion(rotation).rotation_matrix)
     points.translate(translation)
     
     # Reshape points
     points = np.transpose(points.points[:3, :])
 
-    dataformat_utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points, translation, rotation)
+    dataformat_utils.add_lidar_frame(target_path, "LIDAR_TOP", frame_num, points)
 
 def count_frames(nusc, sample):
     """Counts frames to use for progress bar
