@@ -140,10 +140,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        if o3d.__version__ == "0.14.1":
-            self.mat = rendering.MaterialRecord()
-        else:
-            self.mat = rendering.Material()
+        self.mat = rendering.MaterialRecord()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -591,10 +588,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        if o3d.__version__ == "0.14.1":
-            mat = rendering.MaterialRecord()
-        else:
-            mat = rendering.Material()
+        mat = rendering.MaterialRecord()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
