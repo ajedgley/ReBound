@@ -26,6 +26,9 @@ from utils import testing
 from operator import itemgetter
 import platform
 
+# local import
+import annotation_editing as edit
+
 OS_STRING = platform.system()
 ORIGIN = 0
 SIZE = 1
@@ -140,7 +143,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -305,11 +308,14 @@ class Window:
 
         tools_menu = gui.Menu()
         tools_menu.add_item("Scan For Errors",3)
-    
-
+        
+        # Newly added Add/Edit menu
+        tools_menu.add_item("Add/Edit Annotations",4)
+    	
         menu = gui.Menu()
         menu.add_menu("File", file_menu)
         menu.add_menu("Tools", tools_menu)
+        
         gui.Application.instance.menubar = menu
 
 
@@ -353,18 +359,23 @@ class Window:
         cw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
-
+        cw.set_on_menu_item_activated(4, self.on_annotation_start)
+	
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         iw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         iw.set_on_menu_item_activated(2, self.on_menu_quit)
-        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        # Originally read 'cw.set_on_menu...', I think it's a bug?
+        iw.set_on_menu_item_activated(3, self.on_error_scan)
+        iw.set_on_menu_item_activated(4, self.on_annotation_start)
 
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         pw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         pw.set_on_menu_item_activated(2, self.on_menu_quit)
-        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        # Originally read 'cw.set_on_menu...', I think it's a bug?
+        pw.set_on_menu_item_activated(3, self.on_error_scan)
+        pw.set_on_menu_item_activated(4, self.on_annotation_start)
     
 
         # Call update function to draw all initial data
@@ -588,7 +599,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
@@ -1016,8 +1027,11 @@ class Window:
             message = gui.Label("No Errors Found")
             layout.add_child(message)
         window.add_child(layout)
-      
 
+    # for now, only creates the class
+    # should check if existing instance is open, and connect from this class to the other
+    def on_annotation_start(self):
+    	edit.annotations(self.image)
 
     def close_dialog(self):
         self.controls.close_dialog()
