@@ -3,12 +3,20 @@ argoverse-ct.py
 
 Conversion tool for bringing data from the argoverse dataset into our generic data format
 """
-from __future__ import annotations
-from utils import dataformat_utils
 import getopt
 import os
-import pyarrow.feather as feather
+import pandas as pd
+import re
 import sys
+from utils import dataformat_utils
+from utils import geometry_utils
+from pyquaternion import Quaternion
+
+class CurrentState:
+    def __init__(self, cam_timestamp, ann_timestamp, frame_num):
+        self.cam_timestamp = cam_timestamp
+        self.ann_timestamp = ann_timestamp
+        self.frame_num = frame_num
 
 # Name of all the cameras
 camera_list = ["ring_front_center",
@@ -54,55 +62,91 @@ def parse_options():
     return (input_path, output_path, scene_names)
 
 # Process camera sub dir
-def extract_rgb(frame_num, output_path, input_path):
+def extract_rgb(frame_num, timestamp, output_path, input_path):
     # TODO: need correct frame_num
     for camera in camera_list:
-        # Hardcoded path
-        try:
-            dataformat_utils.add_rgb_frame_from_jpg(output_path, camera, frame_num, input_path+camera+"/315969335099927219.jpg")
-        except:
-            pass
+        timestamps = []
+        for file in os.scandir(input_path+camera):
+            res = re.match(r"(\d+)[.]jpg",file.name)
+            if not res:
+                continue
+            timestamps.append(res[1])
+        m=min(timestamps, key=lambda x:abs(int(x)-int(timestamp)))
+        dataformat_utils.add_rgb_frame_from_jpg(output_path, camera, frame_num, input_path+camera+"/"+m+".jpg")
 
 # Process pointcloud sub dir
-def extract_lidar(frame_num, output_path, input_path):
+def extract_lidar(frame_num, timestamp, output_path, input_path):
     # TODO: need correct frame_num, clarify lidar_up vs lidar_down
-    # Hardcoded path
-    try:
-        lidar = feather.read_feather(input_path+"315969335159945000.feather")
-        up = lidar[lidar["laser_number"] < 32]
-        points = list(zip(up.x, up.y, up.z))
-        dataformat_utils.add_lidar_frame(output_path, "lidar_up", frame_num, points)
-    except:
-        pass
+    # # Hardcoded path
+    lidar = pd.read_feather(input_path+timestamp+".feather")
+    points = list(zip(lidar.x, lidar.y, lidar.z))
+    dataformat_utils.add_lidar_frame(output_path, "lidar", frame_num, points)
 
 # Process ego sub dir
-def extract_ego(frame_num, output_path, input_path):
+def extract_ego(frame_num, timestamp, output_path, input_path):
     # TODO: need correct frame_num and translation
     # Temporarily took from 0th index, look into how to get translation
-    egovehicle = feather.read_feather(input_path+"city_SE3_egovehicle.feather")
-    rotation=list(egovehicle.loc[0][["qw","qx","qy","qz"]])
-    translation=list(egovehicle.loc[0][["tx_m","ty_m","tz_m"]])
+    egovehicle = pd.read_feather(input_path+"city_SE3_egovehicle.feather")
+    ego = egovehicle[egovehicle["timestamp_ns"] == int(timestamp)]
+    rotation = ego[["qw","qx","qy","qz"]].values.tolist()
+    translation = ego[["tx_m","ty_m","tz_m"]].values.tolist()
     dataformat_utils.create_ego_directory(output_path, frame_num, translation, rotation)
 
-# Process bounding sub dir
-def extract_bounding(frame_num, output_path, input_path):
-    # TODO: need correct frame_num, origins, and rotations
-    origins=[]
-    sizes=[]
-    rotations=[]
-    annotation_names=[]
-    confidences=[]
+# This function will extract and convert the bounding boxes from Argoverse 2's annotations.feather file into the LVT format. 
+def extract_bounding(frame_num, timestamp, output_path, input_path):
+    ''' Each row in the annotations.feather file in the Argoverse 2 dataset has the values of 
 
-    # Look into how to get origins and rotations
-    annotations = feather.read_feather(input_path+'annotations.feather')
-    for i in annotations.index:
-        row = annotations.loc[i]
-        origins.append(list(row[["tx_m","ty_m","tz_m"]]))
-        sizes.append(list(row[["length_m","width_m","height_m"]]))
-        rotations.append(list(row[["qw","qx","qy","qz"]]))
-        annotation_names.append(row["category"])
+        Index: The current annotation
+
+        timestamp_ns: The timestamp from when the annotation was created (This annotation is not synced with camera timestamps)
+
+        track_uuid: idk
+
+        category: can be any of "ANIMAL, ARTICULATED_BUS, BICYCLE, BICYCLIST, BOLLARD, BOX_TRUCK, BUS, CONSTRUCTION_BARREL, CONSTRUCTION_CONE, DOG, 
+        LARGE_VEHICLE, MESSAGE_BOARD_TRAILER, MOBILE_PEDESTRIAN_CROSSING_SIGN, MOTORCYCLE, MOTORCYCLIS, OFFICIAL_SIGNALER, PEDESTRIAN, RAILED_VEHICLE, 
+        REGULAR_VEHICLE, SCHOOL_BUS, SIGN, STOP_SIGN, STROLLER, TRAFFIC_LIGHT_TRAILER, TRUCK, TRUCK_CAB, VEHICULAR_TRAILER, WHEELCHAIR, WHEELED_DEVICE, 
+        WHEELED_RIDER
+
+        length_m: length of bounding box
+        width_m: width of bounding box
+        height_m: height of bounding box
+
+        qw: quaternion w value
+        qx: quaternion x value
+        qy: quaternion y value
+        qz: quaternion z value
+
+        tx_m: translation x from car
+        ty_m: translation y from car
+        tz_m: translation z from car
+
+        num_interior_pts: idk
+    '''
+    origins = []
+    sizes = []
+    rotations = []
+    annotation_names = []
+    confidences = []
+
+    # Initializes an object containing an invalid timestamps and an initial index of 0
+    state = CurrentState(-1, -1, 0)
+    # Loops through every row in annotations.feather
+    annotations = pd.read_feather(input_path+'annotations.feather')
+    annotations = annotations[annotations["timestamp_ns"] == int(timestamp)]
+    for annotation in annotations.itertuples():
+        ''' MAY NEED TO WORK WITH LENGTH, WIDTH, AND HEIGHT TO FIT PROPERLY'''
+        origins.append([annotation.tx_m, annotation.ty_m, annotation.tz_m])
+        ''' THESE SHOULD BE FINE'''
+        sizes.append([annotation.width_m, annotation.length_m, annotation.height_m])
+        ''' THESE SHOULD BE FINE'''
+        annotation_names.append(annotation.category)
+        ''' IDK HOW TO WORK WITH QUATERNIONS, MAY BE INCORRECT/CORRECT'''
+        quat = Quaternion(axis=[annotation.qx, annotation.qy, annotation.qz], radians=annotation.qw)
+        rotations.append(quat.q.tolist())
+        ''' I BELIEVE THESE ANNOTATIONS ARE GROUND TRUTHS'''
+        # Confidence set to 100 by default for ground truth data
         confidences.append(100)
-
+    
     dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
 
 # Main method for converting datasets
@@ -116,15 +160,22 @@ def convert_dataset(input_path, output_path, scene_name):
         dataformat_utils.create_rgb_sensor_directory(output_path+scene_name, camera, translation, rotation, intrinsic)
 
     # Create dir for each lidar sensor
-    dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar_up")
-    dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar_down")
+    dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar")
 
-    # Temporary frame_num
-    for frame_num in range(1):
-        extract_rgb(frame_num, output_path+scene_name, input_path+scene_name+"/sensors/cameras/")
-        extract_lidar(frame_num, output_path+scene_name, input_path+scene_name+"/sensors/lidar/")
-        extract_ego(frame_num, output_path+scene_name, input_path+scene_name+"/")
-        extract_bounding(frame_num, output_path+scene_name, input_path+scene_name+"/")
+    frame_num = 0
+    frame_count = len([f for f in os.scandir(input_path+scene_name+"/sensors/lidar")])
+    dataformat_utils.print_progress_bar(frame_num, frame_count)
+    for file in os.scandir(input_path+scene_name+"/sensors/lidar"):
+        res = re.match(r"(\d+)[.]feather",file.name)
+        if not res:
+            continue
+        timestamp = res[1]
+        extract_rgb(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/cameras/")
+        extract_lidar(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/lidar/")
+        extract_ego(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
+        extract_bounding(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
+        frame_num += 1
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
 
 if __name__ == "__main__":
     (input_path, output_path, scene_names) = parse_options()
@@ -148,3 +199,9 @@ if __name__ == "__main__":
     # Convert all the scenes
     for scene_name in scene_names:
         convert_dataset(input_path, output_path, scene_name)
+            
+
+# Synchronization:
+# Create a frame for each lidar sweep. Get timestamp.
+# For each camera, find the closest timestamp to the lidar timestamp.
+# For the annotations, the timestamp should have an exact match.
