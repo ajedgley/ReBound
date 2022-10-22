@@ -6,6 +6,7 @@ Conversion tool for bringing data from the argoverse dataset into our generic da
 import getopt
 import os
 import pandas as pd
+import numpy as np
 import re
 import sys
 from utils import dataformat_utils
@@ -60,6 +61,49 @@ def parse_options():
             sys.exit(2)
 
     return (input_path, output_path, scene_names)
+
+def setup_rgb(frame, lct_path):
+    """Sets up the RGB directory with extrinsic data
+    Args:
+        frame: 
+        lct_path: path to LCT directory
+    Returns:
+        None
+        """
+    camera_data_int = {}
+    camera_data_ext = {}
+    int_df = pd.read_feather(lct_path + 'calibration/intrinsics.feather')
+    ext_df = pd.read_feather(lct_path + 'calibration/egovehicle_SE3_sensor.feather')
+    int_df.set_index('sensor_name', inplace=True, drop=True)
+    ext_df.set_index('sensor_name', inplace=True, drop=True)
+
+    # Get camera names and their intrinsic data
+    for c in camera_list:
+        # Store intrinsic data
+        if c in int_df.index: 
+            camera_data_int[c] = [[int_df['fx_px'][c],0,int_df['cx_px'][c]],[0, int_df['fy_px'][c], int_df['cy_px'][c]],[0,0,1]]
+        
+        # Store extrinsic data
+        if c in ext_df.index:
+            qw = read_df['qw'][0]
+            qx = read_df['qx'][0]
+            qy = read_df['qy'][0]
+            qz = read_df['qz'][0]
+            tx = read_df['tx_m'][0]
+            ty = read_df['ty_m'][0]
+            tz = read_df['tz_m'][0]
+
+        # Argoverse uses x,y,z = right, down, front
+        # So no need to transform the matrix
+        camera_data_ext[c] = ([tx,ty,tx],[qw,qx,qy,qz])
+    
+    # Taken from waymo function, will probably have to change format of frame.images and image.name
+    # Create directory for each camera in scene
+    for image in frame.images:
+        translation, rotation_quats = camera_data_ext[image.name]
+        # Create directory for camera
+        dataformat_utils.create_rgb_sensor_directory(lct_path, image.name, translation, rotation_quats, camera_data_int[image.name])
+        
 
 # Process camera sub dir
 def extract_rgb(frame_num, timestamp, output_path, input_path):
