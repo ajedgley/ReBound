@@ -85,17 +85,9 @@ def setup_rgb(frame, lct_path):
         
         # Store extrinsic data
         if c in ext_df.index:
-            qw = read_df['qw'][0]
-            qx = read_df['qx'][0]
-            qy = read_df['qy'][0]
-            qz = read_df['qz'][0]
-            tx = read_df['tx_m'][0]
-            ty = read_df['ty_m'][0]
-            tz = read_df['tz_m'][0]
-
-        # Argoverse uses x,y,z = right, down, front
-        # So no need to transform the matrix
-        camera_data_ext[c] = ([tx,ty,tx],[qw,qx,qy,qz])
+            # Argoverse uses x,y,z = right, down, front
+            # So no need to transform the matrix
+            camera_data_ext[c] = ([ext_df['tx_m'][0],ext_df['ty_m'][0],ext_df['tz_m'][0]],[ext_df['qw'][0],ext_df['qx'][0],ext_df['qy'][0],ext_df['qz'][0]])
     
     # Taken from waymo function, will probably have to change format of frame.images and image.name
     # Create directory for each camera in scene
