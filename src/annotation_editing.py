@@ -1,165 +1,70 @@
 """
-	Adding new functionality to the tool
-	Allows users to add/edit existing annotations, then save
-	
+	functions for editing, we'll see how useful this file is
 """
 
-import getopt
-import matplotlib.colors
-import matplotlib.pyplot as plt
-from PIL import Image
-import sys
-import numpy as np
 import open3d.visualization.gui as gui
-from PIL import Image
-import open3d as o3d
-import open3d.visualization.rendering as rendering
-import json
-import os
-import cv2
-import copy
-from nuscenes.utils.data_classes import Box
-from pyquaternion import Quaternion
-from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
+import functools
+import open3d.visualization.gui.SceneWidget.EventCallbackResult
 
-from utils import geometry_utils
-from utils import testing
-from operator import itemgetter
-import platform
+# returns created window with all its buttons and whatnot
+# maybe not be futureproofed, we'll have to see how nicely it plays with the rest of the functions
+def setup_control_window(scene_widget):
+	cw = gui.Application.instance.create_window("LCT", 400, 800)
+	
+	# shamelessly stolen from lct setup, cuz their window looks nice
+	em = cw.theme.font_size
+	margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
+	layout = gui.Vert(0, margin)
 
-# new functionality, adding the ability to add/edit existing annotations in a new window
-# idk where this is going
-class annotations:
-	def __init__(self, image):
-		print("annotations object created")
-		self.image = image
-		self.blank_image = copy.deepcopy(self.image)
-		self.image_widget = gui.ImageWidget()
-		self.dist = 50
-		self.width = 400
-		self.height = 400
-		
-		self.ew = gui.Application.instance.create_window("Edit", 600, 600)
-		self.cw = gui.Application.instance.create_window("Edit_Controls", 600, 600)
-		
-		self.ew.add_child(self.image_widget)
-		
-		# this draws a rectangle! arbitrary points, colors, etc
-		self.corners = [[100,100], [500,100], [500,500], [100,500]]
-		self.color = (200, 200, 200)
-		self.draw_rect()
-		
-		dist_select = gui.NumberEdit(gui.NumberEdit.INT)
-		dist_select.set_limits(1, 1000)
-		dist_select.set_on_value_changed(self.update_dist)
-		
-		new_image = o3d.geometry.Image(self.image)
-		self.image_widget.update_image(new_image)
-		
-		shift_panel = gui.Vert()
-		top_horiz = gui.Horiz()
-		center_horiz = gui.Horiz()
-		bottom_horiz = gui.Horiz()
-		shift_panel.add_child(gui.Label("Shift box position"))
-		shift_panel.add_child(top_horiz)
-		shift_panel.add_child(center_horiz)
-		shift_panel.add_child(bottom_horiz)
-		shift_panel.add_child(gui.Label(""))
-		shift_panel.add_child(gui.Label("Adjust shift increment"))
-		shift_panel.add_child(dist_select)
-		
-		size_panel = gui.Vert()
-		size_panel.add_child(gui.Label("Adjust box dimensions"))
-		
-		width_select_frame = gui.Horiz()
-		width_select = gui.NumberEdit(gui.NumberEdit.INT)
-		width_select.set_limits(1, 1000)
-		width_select.set_on_value_changed(self.update_width)
-		width_select_frame.add_child(gui.Label("Box width: "))
-		width_select_frame.add_child(width_select)
-		
-		height_select_frame = gui.Horiz()
-		height_select = gui.NumberEdit(gui.NumberEdit.INT)
-		height_select.set_limits(1, 1000)
-		height_select.set_on_value_changed(self.update_height)
-		height_select_frame.add_child(gui.Label("Box height: "))
-		height_select_frame.add_child(height_select)
-		
-		size_panel.add_child(width_select_frame)
-		size_panel.add_child(height_select_frame)
-		
-		control_layout = gui.Horiz()
-		control_layout.add_child(shift_panel)
-		control_layout.add_child(size_panel)
+	# button for adding a new bounding box
+	add_box_horiz = gui.Horiz()
+	add_box_button = gui.Button("Add New Bounding Box")
+	box_partial = functools.partial(add_bounding_box, widget=scene_widget) # necessary to add args to functions
+	add_box_button.set_on_clicked(box_partial)
+	add_box_horiz.add_child(add_box_button)
 
-		self.cw.add_child(control_layout)
-		
-		left_button = gui.Button("<")
-		up_button = gui.Button("^")
-		right_button = gui.Button(">")
-		down_button = gui.Button("v")
-		
-		left_button.set_on_clicked(self.shift_left)
-		right_button.set_on_clicked(self.shift_right)
-		up_button.set_on_clicked(self.shift_up)
-		down_button.set_on_clicked(self.shift_down)
-		
-		center_horiz.add_fixed(20)
-		center_horiz.add_child(left_button)
-		top_horiz.add_fixed(35)
-		top_horiz.add_child(up_button)
-		center_horiz.add_child(right_button)
-		bottom_horiz.add_fixed(35)
-		bottom_horiz.add_child(down_button)
-		
-		# quit for convenience, doesn't quit the entire app tho
-		self.ew.set_on_menu_item_activated(2, gui.Application.instance.quit)
-		
-	def draw_rect(self):
-		self.image = copy.deepcopy(self.blank_image)
-		
-		prev = self.corners[-1]
-		for corner in self.corners:
-			cv2.line(self.image, 
-			(int(prev[0]), int(prev[1])),
-			(int(corner[0]), int(corner[1])), self.color, 2)
-			prev = corner
-		
-		new_image = o3d.geometry.Image(self.image)
-		self.image_widget.update_image(new_image)
+	# button for adding a new bounding box
+	exit_annotation_horiz = gui.Horiz()
+	exit_annotation_button = gui.Button("Exit Annotation Mode")
+	exit_annotation_button.set_on_clicked(exit_annotation_mode)
+	exit_annotation_horiz.add_child(exit_annotation_button)
+
+	# add various metrics and number thingies used to display info about the current bbox
+
+	# adding all of the horiz to the vert, in order
+	layout.add_child(add_box_horiz)
+	layout.add_child(exit_annotation_horiz)
 	
-	def shift_left(self):
-		for corner in self.corners:
-			corner[0] -= self.dist
-		
-		self.draw_rect()
+	cw.add_child(layout)
 	
-	def shift_right(self):
-		for corner in self.corners:
-			corner[0] += self.dist
-		
-		self.draw_rect()
-		
-	def shift_up(self):
-		for corner in self.corners:
-			corner[1] -= self.dist
-		
-		self.draw_rect()
-		
-	def shift_down(self):
-		for corner in self.corners:
-			corner[1] += self.dist
-		
-		self.draw_rect()
+	return cw
 	
-	def update_dist(self, new_dist):
-		if int(new_dist) >= 0 and int(new_dist) < 1000:
-			self.dist = new_dist
+# function should:
+# disable the current mouse functionality
+# onclick, adds a bounding box at the location of click (or maybe just center screen? idk)
+# highlight the current bounding box
+# re-enable the mouse functionality
+# return the new bounding box
+
+def add_bounding_box(widget):
+	widget.set_on_mouse(test)
+	#disable_mouse(scene_widget)
+
+# function should:
+# close the exiting control panel
+# idk, restore the state as if the program just reopened
+# potential ideas:
+# -just restart the program (hey, it'll probably work)
+# -close control window, reopen any previously closed windows, and run update (maybe update done in lct)
+def exit_annotation_mode():
+	print("TODO")
+
+# disables current mouse functionality, ie dragging screen and stuff
+def disable_mouse(scene_widget):
+	scene_widget.set_view_controls(scene_widget.FLY)
+	print(scene_widget.Controls.ROTATE_CAMERA)
 	
-	def update_width(self, new_width):
-		if int(new_width) >= 0 and int(new_width) < 1000:
-			self.width =  new_width
-			
-	def update_height(self, new_height):
-		if int(new_height) >= 0 and int(new_height) < 1000:
-			self.height =  new_height
+# reusable test function, delete for prod
+def test(mouseEvent):
+	print("test")
+	return EventCallbackResult.IGNORED

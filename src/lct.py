@@ -1028,11 +1028,23 @@ class Window:
             layout.add_child(message)
         window.add_child(layout)
 
-    # for now, only creates the class
-    # should check if existing instance is open, and connect from this class to the other
+    # controls what editing mode should be able to do
+    
+    # TODO:
+    # Add button to control window, onclick disables the current mouse functionality (ie dragging window), instead next click = new bounding box
+    # On exiting editing mode, restarts the application/resets it to the 3 window view 
+    # Add button to exit editing mode
+    # Saving functionality (haven't thought that far ahead)
     def on_annotation_start(self):
-    	edit.annotations(self.image)
+    	
+    	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
+    	self.image_window.close()
+    	self.controls.close()
 
+    	cw = edit.setup_control_window(self.widget3d)
+    	
+	# self.widget3d
+	
     def close_dialog(self):
         self.controls.close_dialog()
     
