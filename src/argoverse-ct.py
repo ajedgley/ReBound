@@ -163,13 +163,17 @@ def convert_dataset(input_path, output_path, scene_name):
     dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar")
 
     frame_num = 0
-    frame_count = len([f for f in os.scandir(input_path+scene_name+"/sensors/lidar")])
-    dataformat_utils.print_progress_bar(frame_num, frame_count)
+    frame_count = 0
+    timestamps = []
     for file in os.scandir(input_path+scene_name+"/sensors/lidar"):
         res = re.match(r"(\d+)[.]feather",file.name)
         if not res:
             continue
-        timestamp = res[1]
+        timestamps.append(res[1])
+        frame_count += 1
+    timestamps.sort()
+    dataformat_utils.print_progress_bar(frame_num, frame_count)
+    for timestamp in timestamps:
         extract_rgb(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/cameras/")
         extract_lidar(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/lidar/")
         extract_ego(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
