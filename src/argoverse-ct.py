@@ -13,11 +13,11 @@ from utils import dataformat_utils
 from utils import geometry_utils
 from pyquaternion import Quaternion
 
-class CurrentState:
+'''class CurrentState:
     def __init__(self, cam_timestamp, ann_timestamp, frame_num):
         self.cam_timestamp = cam_timestamp
         self.ann_timestamp = ann_timestamp
-        self.frame_num = frame_num
+        self.frame_num = frame_num'''
 
 # Name of all the cameras
 camera_list = ["ring_front_center",
@@ -129,7 +129,7 @@ def extract_ego(frame_num, timestamp, output_path, input_path):
     dataformat_utils.create_ego_directory(output_path, frame_num, translation, rotation)
 
 # This function will extract and convert the bounding boxes from Argoverse 2's annotations.feather file into the LVT format. 
-def extract_bounding(frame_num, timestamp, output_path, input_path):
+def extract_bounding(annotations, frame_num, timestamp, output_path, input_path):
     ''' Each row in the annotations.feather file in the Argoverse 2 dataset has the values of 
 
         Index: The current annotation
@@ -165,9 +165,8 @@ def extract_bounding(frame_num, timestamp, output_path, input_path):
     confidences = []
 
     # Initializes an object containing an invalid timestamps and an initial index of 0
-    state = CurrentState(-1, -1, 0)
+    #state = CurrentState(-1, -1, 0)
     # Loops through every row in annotations.feather
-    annotations = pd.read_feather(input_path+'annotations.feather')
     annotations = annotations[annotations["timestamp_ns"] == int(timestamp)]
     for annotation in annotations.itertuples():
         ''' MAY NEED TO WORK WITH LENGTH, WIDTH, AND HEIGHT TO FIT PROPERLY'''
@@ -198,6 +197,9 @@ def convert_dataset(input_path, output_path, scene_name):
     # Create dir for each lidar sensor
     dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar")
 
+    # Read in annotation.feather file
+    annotations = pd.read_feather(input_path+'annotations.feather')
+
     frame_num = 0
     frame_count = 0
     timestamps = []
@@ -213,7 +215,7 @@ def convert_dataset(input_path, output_path, scene_name):
         extract_rgb(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/cameras/")
         extract_lidar(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/sensors/lidar/")
         extract_ego(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
-        extract_bounding(frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
+        extract_bounding(annotations, frame_num, timestamp, output_path+scene_name, input_path+scene_name+"/")
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
