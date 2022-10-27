@@ -4,7 +4,6 @@
 
 import open3d.visualization.gui as gui
 import functools
-import open3d.visualization.gui.SceneWidget.EventCallbackResult
 
 # returns created window with all its buttons and whatnot
 # maybe not be futureproofed, we'll have to see how nicely it plays with the rest of the functions
@@ -23,7 +22,7 @@ def setup_control_window(scene_widget):
 	add_box_button.set_on_clicked(box_partial)
 	add_box_horiz.add_child(add_box_button)
 
-	# button for adding a new bounding box
+	# button for exiting annotation mode
 	exit_annotation_horiz = gui.Horiz()
 	exit_annotation_button = gui.Button("Exit Annotation Mode")
 	exit_annotation_button.set_on_clicked(exit_annotation_mode)
@@ -67,4 +66,4 @@ def disable_mouse(scene_widget):
 # reusable test function, delete for prod
 def test(mouseEvent):
 	print("test")
-	return EventCallbackResult.IGNORED
+	return gui.Widget.EventCallbackResult.IGNORED
