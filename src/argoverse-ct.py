@@ -89,8 +89,8 @@ def extract_ego(frame_num, timestamp, output_path, input_path):
     # Temporarily took from 0th index, look into how to get translation
     egovehicle = pd.read_feather(input_path+"city_SE3_egovehicle.feather")
     ego = egovehicle[egovehicle["timestamp_ns"] == int(timestamp)]
-    rotation = ego[["qw","qx","qy","qz"]].values.tolist()
-    translation = ego[["tx_m","ty_m","tz_m"]].values.tolist()
+    rotation = ego[["qw","qx","qy","qz"]].values[0].tolist()
+    translation = ego[["tx_m","ty_m","tz_m"]].values[0].tolist()
     dataformat_utils.create_ego_directory(output_path, frame_num, translation, rotation)
 
 # This function will extract and convert the bounding boxes from Argoverse 2's annotations.feather file into the LVT format. 
@@ -155,8 +155,8 @@ def convert_dataset(input_path, output_path, scene_name):
     # Look into how to get translation, rotation, and intrinsic
     camera_data_int = {}
     camera_data_ext = {}
-    int_df = pd.read_feather(input_path + '/calibration/intrinsics.feather')
-    ext_df = pd.read_feather(input_path + '/calibration/egovehicle_SE3_sensor.feather')
+    int_df = pd.read_feather(input_path + scene_name + '/calibration/intrinsics.feather')
+    ext_df = pd.read_feather(input_path + scene_name + '/calibration/egovehicle_SE3_sensor.feather')
     int_df.set_index('sensor_name', inplace=True, drop=True)
     ext_df.set_index('sensor_name', inplace=True, drop=True)
     
@@ -173,7 +173,7 @@ def convert_dataset(input_path, output_path, scene_name):
     dataformat_utils.create_lidar_sensor_directory(output_path+scene_name, "lidar")
 
     # Read in annotation.feather file
-    annotations = pd.read_feather(input_path+'annotations.feather')
+    annotations = pd.read_feather(input_path+scene_name+'/annotations.feather')
 
     frame_num = 0
     frame_count = 0
