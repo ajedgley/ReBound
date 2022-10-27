@@ -161,11 +161,11 @@ def convert_dataset(input_path, output_path, scene_name):
     ext_df.set_index('sensor_name', inplace=True, drop=True)
     
     for camera in camera_list:
-        translation=ext_df.loc[c][["tx_m","ty_m","tz_m"]].values.tolist()
-        rotation=ext_df.loc[c][["qw","qx","qy","qz"]].values.tolist()
+        translation=ext_df.loc[camera][["tx_m","ty_m","tz_m"]].values.tolist()
+        rotation=ext_df.loc[camera][["qw","qx","qy","qz"]].values.tolist()
         intrinsic= [
-                [int_df['fx_px'][c],0,int_df['cx_px'][c]],
-                [0, int_df['fy_px'][c], int_df['cy_px'][c]],
+                [int_df['fx_px'][camera],0,int_df['cx_px'][camera]],
+                [0, int_df['fy_px'][camera], int_df['cy_px'][camera]],
                 [0,0,1]]
         dataformat_utils.create_rgb_sensor_directory(output_path+scene_name, camera, translation, rotation, intrinsic)
 
