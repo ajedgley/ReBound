@@ -141,7 +141,7 @@ def extract_bounding(annotations, frame_num, timestamp, output_path, input_path)
         ''' THESE SHOULD BE FINE'''
         annotation_names.append(annotation.category)
         ''' IDK HOW TO WORK WITH QUATERNIONS, MAY BE INCORRECT/CORRECT'''
-        quat = Quaternion(axis=[annotation.qx, annotation.qy, annotation.qz], radians=annotation.qw)
+        quat = Quaternion(annotation.qw, annotation.qx, annotation.qy, annotation.qz)
         rotations.append(quat.q.tolist())
         ''' I BELIEVE THESE ANNOTATIONS ARE GROUND TRUTHS'''
         # Confidence set to 100 by default for ground truth data
