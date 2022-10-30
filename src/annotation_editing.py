@@ -25,7 +25,8 @@ def setup_control_window(scene_widget):
 	# button for exiting annotation mode
 	exit_annotation_horiz = gui.Horiz()
 	exit_annotation_button = gui.Button("Exit Annotation Mode")
-	exit_annotation_button.set_on_clicked(exit_annotation_mode)
+	exit_partial = functools.partial(exit_annotation_mode, widget=scene_widget)
+	exit_annotation_button.set_on_clicked(exit_partial)
 	exit_annotation_horiz.add_child(exit_annotation_button)
 
 	# add various metrics and number thingies used to display info about the current bbox
@@ -46,8 +47,8 @@ def setup_control_window(scene_widget):
 # return the new bounding box
 
 def add_bounding_box(widget):
-	widget.set_on_mouse(test)
-	#disable_mouse(scene_widget)
+	partial = functools.partial(place_bounding_box, widget=widget)
+	widget.set_on_mouse(partial)
 
 # function should:
 # close the exiting control panel
@@ -55,15 +56,25 @@ def add_bounding_box(widget):
 # potential ideas:
 # -just restart the program (hey, it'll probably work)
 # -close control window, reopen any previously closed windows, and run update (maybe update done in lct)
-def exit_annotation_mode():
+def exit_annotation_mode(widget):
 	print("TODO")
+	widget.set_on_mouse(enable_mouse)
+
+# onclick, places down a bounding box on the cursor, then reenables mouse functionality
+def place_bounding_box(event, widget):
+	if event.type == gui.MouseEvent.Type.BUTTON_DOWN:
+		print("clicked!")
+		
+		widget.set_on_mouse(enable_mouse)
+		return gui.Widget.EventCallbackResult.CONSUMED
+	
+	return gui.Widget.EventCallbackResult.CONSUMED
 
 # disables current mouse functionality, ie dragging screen and stuff
-def disable_mouse(scene_widget):
-	scene_widget.set_view_controls(scene_widget.FLY)
-	print(scene_widget.Controls.ROTATE_CAMERA)
-	
-# reusable test function, delete for prod
-def test(mouseEvent):
-	print("test")
+def disable_mouse(event):
+	return gui.Widget.EventCallbackResult.CONSUMED
+
+# re-enables mouse functionality to their defaults
+def enable_mouse(event):
 	return gui.Widget.EventCallbackResult.IGNORED
+	
