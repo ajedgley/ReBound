@@ -602,6 +602,7 @@ class Window:
         mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
+        
         for box in self.boxes_to_render:
             size = [0,0,0]
             # Open3D wants sizes in L,W,H
@@ -1040,8 +1041,7 @@ class Window:
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
     	self.image_window.close()
     	self.controls.close()
-
-    	cw = edit.setup_control_window(self.widget3d)
+    	cw = edit.setup_control_window(self.widget3d, self.pointcloud_window, self.frame_extrinsic)
     	
 	# self.widget3d
 	
