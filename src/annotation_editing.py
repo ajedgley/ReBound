@@ -12,6 +12,7 @@ from pyquaternion import Quaternion
 import numpy as np
 import random
 
+
 ORIGIN = 0
 SIZE = 1
 ROTATION = 2
@@ -45,7 +46,8 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic):
 	exit_annotation_horiz.add_child(exit_annotation_button)
 
 	# add various metrics and number thingies used to display info about the current bbox
-
+	click_partial = functools.partial(get_point_depth, widget=scene_widget)
+	scene_widget.set_on_mouse(click_partial)
 	# adding all of the horiz to the vert, in order
 	layout.add_child(add_box_horiz)
 	layout.add_child(exit_annotation_horiz)
@@ -104,9 +106,29 @@ def place_bounding_box(event, widget, pw, fe):
 
 # disables current mouse functionality, ie dragging screen and stuff
 def disable_mouse(event):
+
 	return gui.Widget.EventCallbackResult.CONSUMED
 
 # re-enables mouse functionality to their defaults
 def enable_mouse(event):
 	return gui.Widget.EventCallbackResult.IGNORED
-	
+
+def get_point_depth(event, widget):
+	curr_widget = widget
+	curr_event = event
+	if event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(gui.KeyModifier.CTRL):
+		def get_depth(depth_image):
+			x = event.x - widget.frame.x
+			y = event.y - widget.frame.y
+
+			depth = np.asarray(depth_image)[y, x]
+			world = widget.scene.camera.unproject(
+				event.x, event.y, depth, widget.frame.width, widget.frame.height)
+			output = "({:.3f}, {:.3f}, {:.3f})".format(
+				world[0], world[1], world[2])
+			print(output)
+
+		widget.scene.scene.render_to_depth_image(get_depth)
+		return gui.Widget.EventCallbackResult.HANDLED
+	return gui.Widget.EventCallbackResult.IGNORED
+
