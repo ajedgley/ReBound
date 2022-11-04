@@ -7,6 +7,8 @@ from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import Quaternion
 from nuscenes.utils.data_classes import Box
 
+THRESHOLD = 10**-8
+
 def parse_options():
     """Read in user command line input to get directory paths which will be used for input and output.
     Args:
@@ -62,34 +64,52 @@ def parse_options():
 
     return (input_path, output_path, scene_names, pred_path, ver_name)
 
-def extract_bounding(nusc, sample, frame_num, output_path):
+def extract_bounding(annotations, sample, frame_num, output_path):
     for i in range(0, len(sample['anns']) - 1):
+        # Reverting bounding box
+        with open(output_path + "/bounding/" + str(frame_num) + "/boxes.json") as f1:
+            boxes = json.load(f1)
+        data = boxes["boxes"][i]
+        box = Box(data["origin"], data["size"], Quaternion(data["rotation"]))
+
+        with open(output_path + "/ego/" + str(frame_num) + ".json") as f2:
+            ego = json.load(f2)
+
+        box.rotate(Quaternion(ego["rotation"]))
+        box.translate(np.array(ego["translation"]))
+
+        # Find corresponding annotation in json file
         token = sample['anns'][i]
-        annotation_metadata = nusc.get('sample_annotation', token)
-        # Create nuscenes box object so we can easily transform this box to the vehicle frame that our dataset requires
-        box = Box(annotation_metadata['translation'], annotation_metadata['size'], Quaternion(annotation_metadata['rotation']))
-
-        # Get ego pose information. The LIDAR sensor has the ego information, so we can use that.
-        sensor = nusc.get('sample_data', sample['data']['LIDAR_TOP'])
-        poserecord = nusc.get('ego_pose', sensor['ego_pose_token'])
+        # TODO: Need to fix for new annotations
+        j = 0
+        while (j < len(annotations)) and token != annotations[j]["token"]:
+            j += 1
         
-        #Transform the boxes from global frame to vehicle frame
-        # box.translate(-np.array(poserecord['translation']))
-        # box.rotate(Quaternion(poserecord['rotation']).inverse)
+        # Update annotations json object
+        # TODO: Ask about floating point errors
+        annotations[j]["translation"] = box.center.tolist()
+        annotations[j]["size"] = data["size"]
+        annotations[j]["rotation"] = box.orientation.q.tolist()
+        # zero out small numbers
+        for k in range(len(annotations[j]["translation"])):
+            annotations[j]["translation"][k] = 0 if annotations[j]["translation"][k] < THRESHOLD else annotations[j]["translation"][k]
+        for k in range(len(annotations[j]["size"])):
+            annotations[j]["size"][k] = 0 if annotations[j]["size"][k] < THRESHOLD else annotations[j]["size"][k]
+        for k in range(len(annotations[j]["translation"])):
+            annotations[j]["rotation"][k] = 0 if annotations[j]["rotation"][k] < THRESHOLD else annotations[j]["rotation"][k]
 
-        # Store data obtained from annotation
-        # print(box.center.tolist())
-        # print(annotation_metadata['size'])
-        # print(box.orientation.q.tolist())
-        # print(annotation_metadata['category_name'])
-        # print()
-        # print(f"Annotation: {annotation_metadata}")
-        print(f"Origin: {box.center.tolist()}")
-        print(f"Rotations: {box.orientation.q.tolist()}")
-        print(f"Translation: {np.array(poserecord['translation'])}")
-        break
+        # TODO: Where to find and update label/category
+        annotation_metadata = nusc.get("sample_annotation", token)
+        # using name find token in category.json
+        # using category_token find token in instance.json (may need to update nbr_annotations, first_annotation_token, last_annotation_token)
+        # update instance_token using token in sample_annotation.json
 
-def convert_dataset(output_path, scene_name):
+
+def convert_dataset(annotation_path, output_path, scene_name):
+    # Get annotations for scene
+    with open(annotation_path) as f1:
+        annotations = json.load(f1)
+
     # Validate the scene name passed in
     try:
         scene_token = nusc.field2token('scene', 'name', scene_name)[0]
@@ -100,16 +120,54 @@ def convert_dataset(output_path, scene_name):
     scene = nusc.get('scene', scene_token)
     sample = nusc.get('sample', scene['first_sample_token'])
     frame_num = 0
-    print("NuScenes Original")
+
+    # Iterate through each frame
     while sample['next'] != '':
-        print(f"Frame: {frame_num}")
-        extract_bounding(nusc, sample, frame_num, output_path)
+        # print(f"Frame: {frame_num}")
+        extract_bounding(annotations, sample, frame_num, output_path)
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
-        break
+
+    # TODO: Write annotations somewhere
+    with open("/Users/joshualiu/CMSC435/updated_annotations.json","w") as f2:
+        json.dump(annotations, f2, indent=0)
+
+# sanity check
+def compare_nescene():
+    with open("/Users/joshualiu/CMSC435/nuScenesv1/v1.0-mini/v1.0-mini/sample_annotation.json") as f1:
+        data1 = json.load(f1)
+    with open("/Users/joshualiu/CMSC435/updated_annotations.json") as f2:
+        data2 = json.load(f2)
+    
+    for i in range(len(data1)):
+        if data1[i]["token"] != data2[i]["token"]:
+            print("Token doesn't match")
+        if data1[i]["sample_token"] != data2[i]["sample_token"]:
+            print("Sample token doesn't match")
+        if data1[i]["instance_token"] != data2[i]["instance_token"]:
+            print("Instance token doesn't match")
+        if data1[i]["visibility_token"] != data2[i]["visibility_token"]:
+            print("Visibility token doesn't match")
+        for j in range(len(data1[i]["translation"])):
+            if abs(data1[i]["translation"][j] - data2[i]["translation"][j]) > THRESHOLD:
+                print(data1[i]["translation"][j], data2[i]["translation"][j])
+                print("Translation doesn't match")
+        for j in range(len(data1[i]["size"])):
+            if abs(data1[i]["size"][j] - data2[i]["size"][j]) > THRESHOLD:
+                print("Size doesn't match")
+        for j in range(len(data1[i]["rotation"])):
+            if abs(data1[i]["rotation"][j] - data2[i]["rotation"][j]) > THRESHOLD:
+                print("Rotation doesn't match")
+        if data1[i]["prev"] != data2[i]["prev"]:
+            print("Prev doesn't match")
+        if data1[i]["next"] != data2[i]["next"]:
+            print("Next doesn't match")
+        if data1[i]["num_lidar_pts"] != data2[i]["num_lidar_pts"]:
+            print("Num lidar pts doesn't match")
+        if data1[i]["num_radar_pts"] != data2[i]["num_radar_pts"]:
+            print("Num radar pts doesn't match")
 
 if __name__ == "__main__":
-
     # Read in input database and output directory paths
     (input_path, output_path, scene_names, pred_path,ver_name) = parse_options()
     
@@ -130,23 +188,4 @@ if __name__ == "__main__":
         print(scene_names)
 
     for scene_name in scene_names:
-        convert_dataset(output_path + "/" + scene_name, scene_name)
-
-    print()
-    print("Need this part to match NuScenes Original")
-    print("JSON")
-    f = open("/Users/joshualiu/CMSC435/nuScenesv1-output/scene-0061/bounding/0/boxes.json")
-    data = json.load(f)
-    print(data["boxes"][0])
-
-    sample = data["boxes"][0]
-    box = Box(sample["origin"], sample["size"], Quaternion(sample["rotation"]))
-
-    f2 = open("/Users/joshualiu/CMSC435/nuScenesv1-output/scene-0061/ego/0.json")
-    data2 = json.load(f2)
-
-    box.rotate(Quaternion(data2["rotation"]))
-    box.translate(np.array(data2["translation"]))
-    print(f"Origin: {box.center.tolist()}")
-    print(f"Rotations: {box.orientation.q.tolist()}")
-    print("Translation:", np.array(data2["translation"]))
+        convert_dataset(input_path + ver_name + "/sample_annotation.json", output_path + scene_name, scene_name)
