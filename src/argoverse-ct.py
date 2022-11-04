@@ -144,6 +144,9 @@ def convert_dataset(input_path, output_path):
     ext_df = pd.read_feather(input_path + "calibration/egovehicle_SE3_sensor.feather")
     int_df.set_index("sensor_name", inplace=True, drop=True)
     ext_df.set_index("sensor_name", inplace=True, drop=True)
+
+    # Store metadata
+    dataformat_utils.add_metadata(output_path, 'Argoverse', ['timestamps.csv'])
     
     # Extrinsic and intrinsic data for each camera
     for camera in camera_list:
@@ -184,6 +187,9 @@ def convert_dataset(input_path, output_path):
         extract_bounding(annotations, frame_num, timestamp, output_path)
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
+
+    # Store timestamps
+    pd.DataFrame(timestamps).to_csv(output_path + 'timestamps.csv')
 
 if __name__ == "__main__":
     (input_path, output_path, scene_names) = parse_options()

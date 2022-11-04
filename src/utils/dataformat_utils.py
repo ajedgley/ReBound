@@ -228,7 +228,22 @@ def create_ego_directory(path, frame, translation, rotation):
     with open(json_path, 'w') as f:
         json.dump(ego_data, f)
 
-
+def add_metadata(path, source_format, files):
+    """Adds metadata needed for exporting
+    Args:
+    	path: path to LCT dir
+    	source_format: the original data format (Argoverse, nuScenes, or Waymo)
+    	files: list of the files containing extra data used for exporting
+    Returns:
+    	None
+    	"""
+	
+    metadata = {}
+    metadata['source-format'] = source_format
+    metadata['filenames'] = files
+    
+    with open(path + '/metadata.json', 'w') as f:
+        json.dump(metadata, f)
 
 
 def print_progress_bar(frame_num, total):
