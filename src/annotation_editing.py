@@ -11,7 +11,9 @@ import matplotlib.colors
 from pyquaternion import Quaternion
 import numpy as np
 import random
-
+import os
+import sys
+import json
 
 ORIGIN = 0
 SIZE = 1
@@ -21,10 +23,13 @@ CONFIDENCE = 4
 COLOR = 5
 
 box_count = 1
+
 # returns created window with all its buttons and whatnot
-# maybe not be futureproofed, we'll have to see how nicely it plays with the rest of the functions
-def setup_control_window(scene_widget, pointcloud, frame_extrinsic):
+def setup_control_window(scene_widget, pointcloud, frame_extrinsic, boxes, path):
 	cw = gui.Application.instance.create_window("LCT", 400, 800)
+	
+	# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
+	temp_boxes = boxes.copy()
 	
 	# shamelessly stolen from lct setup, cuz their window looks nice
 	em = cw.theme.font_size
@@ -38,6 +43,28 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic):
 	add_box_button.set_on_clicked(box_partial)
 	add_box_horiz.add_child(add_box_button)
 
+	# button for saving annotation changes
+	save_annotation_horiz = gui.Horiz()
+	save_annotation_button = gui.Button("Save Changes")
+	save_partial = functools.partial(save_changes_to_json, temp_boxes=temp_boxes, path=path)
+	save_annotation_button.set_on_clicked(save_partial)
+	save_annotation_horiz.add_child(save_annotation_button)
+
+	# button for save as, textbox for save as location
+	# on hold because text boxes don't really work with partials
+	"""
+	save_as_horiz = gui.Horiz()
+	
+	save_as_textbox = gui.TextEdit()
+	save_as_textbox.placeholder_text = path
+	
+	save_as_button = gui.Button("Save As...")
+	save_as_partial = functools.partial(save_as, temp_boxes=temp_boxes, path=save_as_textbox.text_value)
+	save_as_button.set_on_clicked(save_as_partial)
+	
+	save_as_horiz.add_child(save_as_button)
+	save_as_horiz.add_child(save_as_textbox) """
+
 	# button for exiting annotation mode
 	exit_annotation_horiz = gui.Horiz()
 	exit_annotation_button = gui.Button("Exit Annotation Mode")
@@ -48,8 +75,11 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic):
 	# add various metrics and number thingies used to display info about the current bbox
 	click_partial = functools.partial(get_point_depth, widget=scene_widget)
 	scene_widget.set_on_mouse(click_partial)
+	
 	# adding all of the horiz to the vert, in order
 	layout.add_child(add_box_horiz)
+	layout.add_child(save_annotation_horiz)
+	#layout.add_child(save_as_horiz)
 	layout.add_child(exit_annotation_horiz)
 	
 	cw.add_child(layout)
@@ -62,7 +92,6 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic):
 # highlight the current bounding box
 # re-enable the mouse functionality
 # return the new bounding box
-
 def add_bounding_box(widget, pw, fe):
 	partial = functools.partial(place_bounding_box, widget=widget, pw=pw, fe=fe)
 	widget.set_on_mouse(partial)
@@ -74,6 +103,7 @@ def add_bounding_box(widget, pw, fe):
 # -just restart the program (hey, it'll probably work)
 # -close control window, reopen any previously closed windows, and run update (maybe update done in lct)
 def exit_annotation_mode(widget):
+	# os.execl(sys.executable, os.path.abspath(__file__), *sys.argv), this doesn't work but maybe it's an idea
 	print("TODO")
 	widget.set_on_mouse(enable_mouse)
 
@@ -106,7 +136,6 @@ def place_bounding_box(event, widget, pw, fe):
 
 # disables current mouse functionality, ie dragging screen and stuff
 def disable_mouse(event):
-
 	return gui.Widget.EventCallbackResult.CONSUMED
 
 # re-enables mouse functionality to their defaults
@@ -131,4 +160,13 @@ def get_point_depth(event, widget):
 		widget.scene.scene.render_to_depth_image(get_depth)
 		return gui.Widget.EventCallbackResult.HANDLED
 	return gui.Widget.EventCallbackResult.IGNORED
+	
+# overwrites currently open file with temp_boxes
+def save_changes_to_json(temp_boxes, path):
+	with open(path, "w") as outfile:
+		outfile.write(json.dumps(temp_boxes))
 
+# prompt with user input for new path, then saves
+def save_as(temp_boxes, path):
+	print(path)
+	save_changes_to_json(temp_boxes, path)

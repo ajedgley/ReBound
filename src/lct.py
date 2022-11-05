@@ -116,7 +116,8 @@ class Window:
 
         self.frame_num = 0
         # dictionary that stores the imported JSON file that respresents the annotations in the current frame
-        self.boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+        self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+        self.boxes = json.load(open(self.path_string))
         # num of frames available to display
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
         self.num_frames = len(frames_available)
@@ -1039,11 +1040,8 @@ class Window:
     def on_annotation_start(self):
     	
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
-    	self.image_window.close()
     	self.controls.close()
-    	cw = edit.setup_control_window(self.widget3d, self.pointcloud_window, self.frame_extrinsic)
-    	
-	# self.widget3d
+    	cw = edit.setup_control_window(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.path_string)
 	
     def close_dialog(self):
         self.controls.close_dialog()
