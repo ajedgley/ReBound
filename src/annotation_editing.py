@@ -3,12 +3,19 @@
 """
 
 import open3d.visualization.gui as gui
+import open3d.visualization.rendering as rendering
+import open3d as o3d
 import functools
 import numpy as np
+from pyquaternion import Quaternion
 
+ORIGIN = 0
+SIZE = 1
+ROTATION = 2
 # returns created window with all its buttons and whatnot
 # maybe not be futureproofed, we'll have to see how nicely it plays with the rest of the functions
-def setup_control_window(scene_widget):
+def setup_control_window(scene_widget, boxes, extrinsics):
+	current_boxes = boxes
 	cw = gui.Application.instance.create_window("LCT", 400, 800)
 	
 	# shamelessly stolen from lct setup, cuz their window looks nice
@@ -23,6 +30,13 @@ def setup_control_window(scene_widget):
 	add_box_button.set_on_clicked(box_partial)
 	add_box_horiz.add_child(add_box_button)
 
+
+	open_box_horiz = gui.Horiz()
+	open_box_button = gui.Button("Generate Boxes")
+	box_partial = functools.partial(create_box_scene, scene=scene_widget, boxes=current_boxes, extrinsics=extrinsics)
+	open_box_button.set_on_clicked(box_partial)
+	open_box_horiz.add_child(open_box_button)
+
 	# button for exiting annotation mode
 	exit_annotation_horiz = gui.Horiz()
 	exit_annotation_button = gui.Button("Exit Annotation Mode")
@@ -36,6 +50,7 @@ def setup_control_window(scene_widget):
 	# adding all of the horiz to the vert, in order
 	layout.add_child(add_box_horiz)
 	layout.add_child(exit_annotation_horiz)
+	layout.add_child(open_box_horiz)
 	
 	cw.add_child(layout)
 	
@@ -95,8 +110,40 @@ def get_point_depth(event, widget):
 			output = "({:.3f}, {:.3f}, {:.3f})".format(
 				world[0], world[1], world[2])
 			print(output)
-
 		widget.scene.scene.render_to_depth_image(get_depth)
 		return gui.Widget.EventCallbackResult.HANDLED
 	return gui.Widget.EventCallbackResult.IGNORED
+
+def create_box_scene(scene, boxes, extrinsics):
+	id = 0
+	cube_indices = []
+	mat = rendering.MaterialRecord()
+	mat.shader = "defaultLit"
+
+	for box in boxes:
+		size = [0, 0, 0]
+		size[0] = box[SIZE][1]
+		size[1] = box[SIZE][0]
+		size[2] = box[SIZE][2]
+
+		cube_to_add = o3d.geometry.TriangleMesh.create_box(size[0], size[1], size[2], False, False)
+		cube_to_add = cube_to_add.translate(np.array([0,0,0]), False)
+		cube_to_add = cube_to_add.rotate(Quaternion(box[ROTATION]).rotation_matrix, [0,0,0])
+		cube_to_add = cube_to_add.translate(box[ORIGIN])
+
+
+		cube_to_add = cube_to_add.rotate(Quaternion(extrinsics['rotation']).rotation_matrix, [0,0,0])
+		cube_to_add = cube_to_add.translate(np.array(extrinsics['translation']))
+		cube_id = "cube_" + str(id)
+		cube_indices.append(cube_id)
+		id += 1
+
+		cube_to_add.compute_vertex_normals()
+		scene.scene.add_geometry(cube_id, cube_to_add, mat)
+
+
+
+
+
+
 

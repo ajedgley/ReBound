@@ -90,6 +90,7 @@ class Window:
         self.show_false_positive = False
         self.show_incorrect_annotations = False
         self.boxes_to_render = []
+        self.boxes_in_scene = []
         self.show_score = False
         self.label_list = []
         # These three values represent the current LiDAR sensors, RGB sensors, and annotations being displayed
@@ -143,7 +144,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.Material()
+        self.mat = rendering.MaterialRecord()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -390,7 +391,6 @@ class Window:
         eye[1] = self.frame_extrinsic['translation'][1]
         eye[2] = 150.0
         self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
-
     def update_image(self):
         """Fetches new image from LVT Directory, and draws it onto a plt figure
            Uses nuScenes API to project 3D bounding boxes onto that plt figure
@@ -578,6 +578,7 @@ class Window:
                 None
                 """
         self.widget3d.scene.clear_geometry()
+        self.boxes_in_scene = []
         # Add Pointcloud
         temp_points = np.empty((0,3))
         for label in self.label_list:
@@ -599,7 +600,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.Material()
+        mat = rendering.MaterialRecord()
         mat.shader = "unlitLine"
         mat.line_width = .25
         for box in self.boxes_to_render:
@@ -614,6 +615,7 @@ class Window:
             bounding_box.translate(np.array(self.frame_extrinsic['translation']))
             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
             bounding_box.color = matplotlib.colors.to_rgb(hex)
+            self.boxes_in_scene.append(bounding_box)
 
             if box[CONFIDENCE] < 100 and self.show_score:
                 label = self.widget3d.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
@@ -1041,7 +1043,7 @@ class Window:
     	self.image_window.close()
     	self.controls.close()
 
-    	cw = edit.setup_control_window(self.widget3d)
+    	cw = edit.setup_control_window(self.widget3d, self.boxes_to_render, self.frame_extrinsic)
     	
 	# self.widget3d
 	
