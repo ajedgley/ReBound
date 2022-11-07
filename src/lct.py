@@ -117,7 +117,8 @@ class Window:
 
         self.frame_num = 0
         # dictionary that stores the imported JSON file that respresents the annotations in the current frame
-        self.boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+        self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+        self.boxes = json.load(open(self.path_string))
         # num of frames available to display
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
         self.num_frames = len(frames_available)
@@ -391,6 +392,7 @@ class Window:
         eye[1] = self.frame_extrinsic['translation'][1]
         eye[2] = 150.0
         self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+
     def update_image(self):
         """Fetches new image from LVT Directory, and draws it onto a plt figure
            Uses nuScenes API to project 3D bounding boxes onto that plt figure
@@ -603,6 +605,7 @@ class Window:
         mat = rendering.MaterialRecord()
         mat.shader = "unlitLine"
         mat.line_width = .25
+
         for box in self.boxes_to_render:
             size = [0,0,0]
             # Open3D wants sizes in L,W,H
@@ -1040,13 +1043,11 @@ class Window:
     def on_annotation_start(self):
     	
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
-    	self.image_window.close()
     	self.controls.close()
+    	cw = edit.setup_control_window(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.path_string)
 
-    	cw = edit.setup_control_window(self.widget3d, self.boxes_to_render, self.frame_extrinsic)
-    	
 	# self.widget3d
-	
+
     def close_dialog(self):
         self.controls.close_dialog()
     
