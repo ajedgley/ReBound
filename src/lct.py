@@ -70,8 +70,7 @@ def parse_options():
 
 class Window:
     MENU_IMPORT = 1
-    def __init__(self, lct_dir):
-        
+    def __init__(self, lct_dir):        
         np.set_printoptions(precision=15)
 
         # Create the objects for the 3 windows that appear when running the application
@@ -145,7 +144,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -602,7 +601,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
 
@@ -1044,7 +1043,7 @@ class Window:
     	
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
     	self.controls.close()
-    	cw = edit.setup_control_window(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.path_string)
+    	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.path_string)
 
 	# self.widget3d
 
