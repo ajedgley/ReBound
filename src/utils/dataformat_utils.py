@@ -138,7 +138,7 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     copyfile(input_path, full_path)
 
-def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False):   
+def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False, data=None):   
     """Adds box data for one frame
     Args:
         path: path to LCT directory
@@ -188,6 +188,8 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['rotation'] = rotations[i]
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
+        if (data) and ('nuscenes' in data):
+            box['data'] = {"nuscenes":data['nuscenes'][i]}
         box_data['boxes'].append(box)
 
     with open(json_path, 'w') as f:

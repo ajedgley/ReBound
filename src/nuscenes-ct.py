@@ -117,6 +117,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
     Returns:
         None
         """
+    tokens = []
     origins = []
     sizes = []
     rotations = []
@@ -126,6 +127,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
     # Get translation, rotation, dimensions, and origins for bounding boxes for each annotation
     for i in range(0, len(sample['anns']) - 1):
         token = sample['anns'][i]
+        tokens.append(token)
         annotation_metadata = nusc.get('sample_annotation', token)
         # Create nuscenes box object so we can easily transform this box to the vehicle frame that our dataset requires
         box = Box(annotation_metadata['translation'], annotation_metadata['size'], Quaternion(annotation_metadata['rotation']))
@@ -147,7 +149,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         # Confidence for ground truth data is always 100
         confidences.append(100)
         
-    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, data={"nuscenes":tokens})
 
 def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data):
     """Similar to extract_bounding, but specifically to read in predicted data given by a user
