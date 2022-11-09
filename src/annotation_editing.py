@@ -3,13 +3,15 @@
 """
 
 import open3d.visualization.gui as gui
+import open3d.visualization.rendering as rendering
+import open3d as o3d
 import functools
 import open3d as o3d
 from nuscenes.utils.data_classes import Box
 import open3d.visualization.rendering as rendering
 import matplotlib.colors
-from pyquaternion import Quaternion
 import numpy as np
+from pyquaternion import Quaternion
 import random
 import os
 import sys
@@ -24,13 +26,16 @@ COLOR = 5
 
 box_count = 1
 
+ORIGIN = 0
+SIZE = 1
+ROTATION = 2
 # returns created window with all its buttons and whatnot
 def setup_control_window(scene_widget, pointcloud, frame_extrinsic, boxes, path):
 	cw = gui.Application.instance.create_window("LCT", 400, 800)
 	
 	# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 	temp_boxes = boxes.copy()
-	
+
 	# shamelessly stolen from lct setup, cuz their window looks nice
 	em = cw.theme.font_size
 	margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
@@ -65,6 +70,13 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic, boxes, path)
 	save_as_horiz.add_child(save_as_button)
 	save_as_horiz.add_child(save_as_textbox) """
 
+
+	open_box_horiz = gui.Horiz()
+	open_box_button = gui.Button("Generate Boxes")
+	box_partial = functools.partial(create_box_scene, scene=scene_widget, boxes=current_boxes, extrinsics=extrinsics)
+	open_box_button.set_on_clicked(box_partial)
+	open_box_horiz.add_child(open_box_button)
+
 	# button for exiting annotation mode
 	exit_annotation_horiz = gui.Horiz()
 	exit_annotation_button = gui.Button("Exit Annotation Mode")
@@ -75,13 +87,14 @@ def setup_control_window(scene_widget, pointcloud, frame_extrinsic, boxes, path)
 	# add various metrics and number thingies used to display info about the current bbox
 	click_partial = functools.partial(get_point_depth, widget=scene_widget)
 	scene_widget.set_on_mouse(click_partial)
-	
+
 	# adding all of the horiz to the vert, in order
 	layout.add_child(add_box_horiz)
 	layout.add_child(save_annotation_horiz)
 	#layout.add_child(save_as_horiz)
 	layout.add_child(exit_annotation_horiz)
-	
+	layout.add_child(open_box_horiz)
+
 	cw.add_child(layout)
 	
 	return cw
@@ -115,20 +128,20 @@ def place_bounding_box(event, widget, pw, fe):
 		origin = [random.randint(0,40),random.randint(0,10),random.randint(0,10)] #Random origin of box within existing pointcloud bounds
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		mat = rendering.Material()
-		
+
 		bounding_box = o3d.geometry.OrientedBoundingBox(origin, qtr.rotation_matrix, size) #Creates bounding box object
 		bounding_box.rotate(Quaternion(fe['rotation']).rotation_matrix, [0,0,0]) #Frame extrinsic data necessary to display boxes
 		bounding_box.translate(np.array(fe['translation']))
 		bounding_box.color = matplotlib.colors.to_rgb((0,0,1)) #Custom bounding boxes are blue to differentiate from the existing ones
-		
+
 		global box_count #Ensures that the scene treats each box differently, letting you add multiple
 		widget.scene.add_geometry(str(box_count), bounding_box, mat) #Generates a box
-		
+
 		widget.force_redraw()
 		pw.post_redraw()
 		print("clicked!")
 		box_count += 1
-		
+
 		widget.set_on_mouse(enable_mouse)
 		return gui.Widget.EventCallbackResult.CONSUMED
 	
@@ -160,7 +173,7 @@ def get_point_depth(event, widget):
 		widget.scene.scene.render_to_depth_image(get_depth)
 		return gui.Widget.EventCallbackResult.HANDLED
 	return gui.Widget.EventCallbackResult.IGNORED
-	
+
 # overwrites currently open file with temp_boxes
 def save_changes_to_json(temp_boxes, path):
 	with open(path, "w") as outfile:
@@ -170,3 +183,37 @@ def save_changes_to_json(temp_boxes, path):
 def save_as(temp_boxes, path):
 	print(path)
 	save_changes_to_json(temp_boxes, path)
+
+def create_box_scene(scene, boxes, extrinsics):
+	id = 0
+	cube_indices = []
+	mat = rendering.MaterialRecord()
+	mat.shader = "defaultLit"
+
+	for box in boxes:
+		size = [0, 0, 0]
+		size[0] = box[SIZE][1]
+		size[1] = box[SIZE][0]
+		size[2] = box[SIZE][2]
+
+		cube_to_add = o3d.geometry.TriangleMesh.create_box(size[0], size[1], size[2], False, False)
+		cube_to_add = cube_to_add.translate(np.array([0,0,0]), False)
+		cube_to_add = cube_to_add.rotate(Quaternion(box[ROTATION]).rotation_matrix, [0,0,0])
+		cube_to_add = cube_to_add.translate(box[ORIGIN])
+
+
+		cube_to_add = cube_to_add.rotate(Quaternion(extrinsics['rotation']).rotation_matrix, [0,0,0])
+		cube_to_add = cube_to_add.translate(np.array(extrinsics['translation']))
+		cube_id = "cube_" + str(id)
+		cube_indices.append(cube_id)
+		id += 1
+
+		cube_to_add.compute_vertex_normals()
+		scene.scene.add_geometry(cube_id, cube_to_add, mat)
+
+
+
+
+
+
+
