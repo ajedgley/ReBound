@@ -71,6 +71,9 @@ def extract_bounding(sample, frame_num, output_path):
     with open(output_path + "/ego/" + str(frame_num) + ".json") as f:
             ego = json.load(f)
 
+    for k in samples.keys():
+        if samples[k]["timestamp"] == timestamps[frame_num]:
+            sample_token = k
     tokens = []
     # TODO: test edit and add
     for i in range(len(bounding["boxes"])):
@@ -80,9 +83,9 @@ def extract_bounding(sample, frame_num, output_path):
         box.rotate(Quaternion(ego["rotation"]))
         box.translate(np.array(ego["translation"]))
 
-        if "nuscenes" in bounding_box["data"]:
+        if bounding_box["data"]:
             # Edit annotation
-            token = bounding_box["data"]["nuscenes"]
+            token = bounding_box["data"]["token"]
             tokens.append(token)
         
             # Update annotations json object
@@ -100,20 +103,20 @@ def extract_bounding(sample, frame_num, output_path):
             # Add annotation
             # Add to sample_annotation
             ann_token = token_hex(16)
-            sample_token = token_hex(16)
+            sample_token = k
             instance_token = token_hex(16)
             print("Adding", ann_token)
             data = {}
             data["token"] = ann_token
             data["sample_token"] = sample_token
             data["instance_token"] = instance_token
-            data["attribute_tokens"] = [] # TODO: look into
-            data["visibility_token"] = -1 # TODO: calculate
+            data["attribute_tokens"] = [] # TODO: need user input
+            data["visibility_token"] = 4 # TODO: users needs to have good visibility in order to annotate
             data["translation"] = box.center.tolist()
             data["size"] = bounding_box["size"]
             data["rotation"] = box.orientation.q.tolist()
-            data["num_lidar_pts"] = -1 # TODO: calculate
-            data["num_radar_pts"] = -1 # TODO: calculate
+            data["num_lidar_pts"] = 0 # TODO: calculate
+            data["num_radar_pts"] = 0 # TODO: calculate
             data["prev"] = "" # not able to calculate
             data["next"] = "" # not able to calculate
             sample_annotations[data["token"]] = data
@@ -125,18 +128,6 @@ def extract_bounding(sample, frame_num, output_path):
             data["first_annotation_token"] = ann_token
             data["last_annotation_token"] = ann_token
             instance[data["token"]] = data
-            # Add to sample
-            scene_token = nusc.field2token('scene', 'name', scene_name)[0]
-            data = {}
-            data["token"] = sample_token
-            data["timestamp"] = -1 # TODO: maybe be possible to get
-            data["prev"] = -1 # TODO: need timestamp
-            data["next"] = -1 # TODO: need timestamp
-            data["scene_token"] = scene_token
-            samples[data["token"]] = data
-            # Update scene
-            scenes[scene_token]["nbr_samples"] += 1
-            # TODO: need timestamp to update "first_sample_token" and "last_sample_token"
 
     # TODO: test delete
     for i in range(0, len(sample['anns']) - 1):
@@ -166,24 +157,6 @@ def extract_bounding(sample, frame_num, output_path):
         else:
             instance[instance_token]["next"] = next
             instance[instance_token]["prev"] = prev
-        # Delete from sample and scene
-        prev = samples[sample_token]["prev"]
-        next = samples[sample_token]["next"]
-        scene_token = samples[sample_token]["scene_token"]
-        samples.pop(sample_token)
-        scenes[scene_token]["nbr_samples"] -= 1
-        if prev == "" and next == "":
-            scenes[scene_token]["first_sample_token"] = next
-            scenes[scene_token]["last_sample_token"] = prev
-        elif prev == "":
-            samples[next]["prev"] = ""
-            scenes[scene_token]["first_sample_token"] = next
-        elif next == "":
-            samples[prev]["next"] = ""
-            scenes[scene_token]["last_sample_token"] = prev
-        else:
-            samples[prev]["next"] = next
-            samples[next]["prev"] = prev
 
 def convert_dataset(output_path, scene_name):
     # Validate the scene name passed in
@@ -209,8 +182,6 @@ def convert_dataset(output_path, scene_name):
         json.dump(list(sample_annotations.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/sample.json","w") as f:
         json.dump(list(samples.values()), f, indent=0)
-    with open("/Users/joshualiu/CMSC435/revert/scene.json","w") as f:
-        json.dump(list(scenes.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/category.json","w") as f:
         json.dump(list(category.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/instance.json","w") as f:
@@ -276,11 +247,6 @@ if __name__ == "__main__":
         samples = {}
         for i in range(len(data)):
             samples[data[i]["token"]] = data[i]
-    with open(input_path + ver_name + "/scene.json") as f:
-        data = json.load(f)
-        scenes = {}
-        for i in range(len(data)):
-            scenes[data[i]["token"]] = data[i]
     with open(input_path + ver_name +  "/category.json") as f:
         data = json.load(f)
         category = {}
@@ -300,4 +266,7 @@ if __name__ == "__main__":
         print(scene_names)
 
     for scene_name in scene_names:
+        with open(output_path + scene_name + "/timestamps.json") as f:
+            data = json.load(f)
+            timestamps = data["timestamps"]
         convert_dataset(output_path + scene_name, scene_name)

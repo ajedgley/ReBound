@@ -188,8 +188,10 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['rotation'] = rotations[i]
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
-        if (data) and ('nuscenes' in data):
-            box['data'] = {"nuscenes":data['nuscenes'][i]}
+        if data:
+            box['data'] = {}
+            for k in data.keys():
+                box['data'][k] = data[k][i]
         box_data['boxes'].append(box)
 
     with open(json_path, 'w') as f:
