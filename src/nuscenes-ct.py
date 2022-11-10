@@ -126,7 +126,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
     confidences = []
     
     # Get translation, rotation, dimensions, and origins for bounding boxes for each annotation
-    for i in range(0, len(sample['anns']) - 1):
+    for i in range(0, len(sample['anns'])):
         token = sample['anns'][i]
         tokens.append(token)
         annotation_metadata = nusc.get('sample_annotation', token)
@@ -340,7 +340,7 @@ def convert_dataset(output_path, scene_name, pred_data):
         extract_bounding(nusc, sample, frame_num, output_path)
         extract_rgb(nusc, sample, frame_num, output_path)
         extract_lidar(nusc, sample, frame_num, output_path)
-        timestamps.append(sample['timestamp'])
+        timestamps.append(sample['token'])
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
         dataformat_utils.print_progress_bar(frame_num, frame_count)
