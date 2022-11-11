@@ -1056,7 +1056,9 @@ class Window:
     	
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
     	self.controls.close()
-    	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.boxes_to_render, self.boxes_in_scene, self.box_indices, self.path_string)
+    	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
+                                            self.boxes_to_render, self.boxes_in_scene, self.box_indices,
+                                            self.all_pred_annotations, self.path_string)
 
 	# self.widget3d
 
