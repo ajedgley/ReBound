@@ -1,11 +1,13 @@
 """
 	functions for editing, we'll see how useful this file is
 """
+import math
 
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import open3d as o3d
 import functools
+from functools import partial
 import open3d as o3d
 from nuscenes.utils.data_classes import Box
 import open3d.visualization.rendering as rendering
@@ -33,32 +35,50 @@ class Annotation:
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
 		self.all_pred_annotations = annotation_types
-		self.boxes_to_render = boxes_to_render #list of box metadata in scene
-		self.box_indices = box_indices #name references for bounding boxes in scene
-		self.boxes_in_scene = boxes_in_scene #current bounding box objects in scene
-		self.volume_indices = [] #name references for cube volumes in scene
-		self.volumes_in_scene = [] #the current cube volume objects in scene
+		self.boxes_to_render = boxes_to_render 		#list of box metadata in scene
+		self.box_indices = box_indices 				#name references for bounding boxes in scene
+		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
+		self.volume_indices = [] 					#name references for cube volumes in scene
+		self.volumes_in_scene = [] 					#current cube volume objects in scene
 		
 		self.box_selected = None
+		self.box_props_selected = [] #used for determining changes to property fields
 		self.previous_index = -1 #-1 denotes, no box selected
 		#used to generate unique ids for boxes and volumes
 		self.box_count = 0
-		self.transparent_mat = rendering.Material() #invisible material for box volumes
+
+		#common materials
+		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
+
+		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight.shader = "unlitLine"
+
+		self.line_mat = rendering.MaterialRecord()
+		self.line_mat.shader = "unlitLine"
+		self.line_mat.line_width = 0.25
+
+		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat.shader = "defaultLit"
+
 		self.coord_frame = "coord_frame"
+
 		self.z_drag = False
+		self.curr_x = 0.0 #used for initial mouse position in drags
+		self.curr_y = 0.0
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
 
 		#initialize the scene with transparent volumes to allow mouse interactions with boxes
 		self.create_box_scene(scene_widget, boxes_to_render, frame_extrinsic)
+		self.average_depth = self.get_depth_average()
 
 		# shamelessly stolen from lct setup, cuz their window looks nice
 		em = self.cw.theme.font_size
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
-		layout = gui.Vert(0, margin)
+		layout = gui.Vert(0.50 * em, margin)
 
 		# button for adding a new bounding box
 		add_box_horiz = gui.Horiz()
@@ -68,7 +88,64 @@ class Annotation:
 		toggle_axis_button.set_on_clicked(self.toggle_axis)
 		add_box_horiz.add_child(add_box_button)
 		add_box_horiz.add_child(toggle_axis_button)
-		
+
+		#The data for a selected box will be displayed in these fields
+		#the data fields are accessible to any function to allow easy manipulation during drag operations
+		properties_vert = gui.Vert(0.50 * em, margin)
+		trans_collapse = gui.CollapsableVert("Position", 0, margin)
+		rot_collapse = gui.CollapsableVert("Rotation", 0, margin)
+		scale_collapse = gui.CollapsableVert("Scale", 0, margin)
+		self.trans_x = gui.TextEdit()
+		self.trans_x.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="x"))
+		self.trans_y = gui.TextEdit()
+		self.trans_y.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="y"))
+		self.trans_z = gui.TextEdit()
+		self.trans_z.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="z"))
+		self.rot_x = gui.TextEdit()
+		self.rot_x.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="x"))
+		self.rot_y = gui.TextEdit()
+		self.rot_y.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="y"))
+		self.rot_z = gui.TextEdit()
+		self.rot_z.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="z"))
+		self.scale_x = gui.TextEdit()
+		self.scale_x.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="x"))
+		self.scale_y = gui.TextEdit()
+		self.scale_y.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="y"))
+		self.scale_z = gui.TextEdit()
+		self.scale_z.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="z"))
+
+		trans_horiz = gui.Horiz(0.50 * em, margin)
+		trans_horiz.add_child(gui.Label("X:"))
+		trans_horiz.add_child(self.trans_x)
+		trans_horiz.add_child(gui.Label("Y:"))
+		trans_horiz.add_child(self.trans_y)
+		trans_horiz.add_child(gui.Label("Z:"))
+		trans_horiz.add_child(self.trans_z)
+		trans_collapse.add_child(trans_horiz)
+
+		rot_horiz = gui.Horiz(0.50 * em, margin)
+		rot_horiz.add_child(gui.Label("X:"))
+		rot_horiz.add_child(self.rot_x)
+		rot_horiz.add_child(gui.Label("Y:"))
+		rot_horiz.add_child(self.rot_y)
+		rot_horiz.add_child(gui.Label("Z:"))
+		rot_horiz.add_child(self.rot_z)
+		rot_collapse.add_child(rot_horiz)
+
+		scale_horiz = gui.Horiz(0.50 * em, margin)
+		scale_horiz.add_child(gui.Label("X:"))
+		scale_horiz.add_child(self.scale_x)
+		scale_horiz.add_child(gui.Label("Y:"))
+		scale_horiz.add_child(self.scale_y)
+		scale_horiz.add_child(gui.Label("Z:"))
+		scale_horiz.add_child(self.scale_z)
+		scale_collapse.add_child(scale_horiz)
+
+		properties_vert.add_child(trans_collapse)
+		properties_vert.add_child(rot_collapse)
+		properties_vert.add_child(scale_collapse)
+
+
 		# buttons for saving/saving as annotation changes
 		save_annotation_horiz = gui.Horiz()
 		save_annotation_button = gui.Button("Save Changes")
@@ -102,6 +179,7 @@ class Annotation:
 		# adding all of the horiz to the vert, in order
 		layout.add_child(add_box_horiz)
 		layout.add_child(save_annotation_horiz)
+		layout.add_child(properties_vert)
 		layout.add_child(delete_annotation_horiz)
 		
 		layout.add_child(empty_horiz)
@@ -111,13 +189,12 @@ class Annotation:
 		
 		# Event handlers
 		
-		# sets up onclick box selection
-		click_partial = functools.partial(self.get_point_depth, widget=scene_widget)
-		scene_widget.set_on_mouse(click_partial)
+		# sets up onclick box selection and drag interactions
+		scene_widget.set_on_mouse(self.mouse_event_handler)
 
 		# sets up keyboard event handling
-		key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
-		scene_widget.set_on_key(key_partial)
+		#key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
+		#scene_widget.set_on_key(key_partial)
 
 
 	# Intermediate helper function that allows a user to select an annotation type from a dropdown list
@@ -164,7 +241,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr] #create_volume uses box meta data to create mesh
 
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -186,7 +263,6 @@ class Annotation:
 
 		self.scene_widget.force_redraw()
 		self.point_cloud.post_redraw()
-		print("clicked!")
 		self.box_count += 1
 
 	# disables current mouse functionality, ie dragging screen and stuff
@@ -200,7 +276,8 @@ class Annotation:
 	#Takes the frame x and y coordinates and flattens the 3D scene into a 2D depth image
 	#The X and Y coordinates select the depth value from the depth image and converts it into a depth value
 	#After getting the coordinates, it automatically calls the closest distance function
-	def get_point_depth(self, event, widget):
+	def mouse_event_handler(self, event):
+		widget = self.scene_widget
 		if event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(gui.KeyModifier.CTRL):
 			def get_depth(depth_image): #gets world coords from mouse click
 				x = event.x - widget.frame.x
@@ -233,43 +310,55 @@ class Annotation:
 			return gui.Widget.EventCallbackResult.HANDLED
 
 		#So Open3D only passes one event to one event handler so the drag function gets moved here
-		elif event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(gui.KeyModifier.SHIFT): 
+		elif event.is_modifier_down(gui.KeyModifier.SHIFT):
 			current_box = self.previous_index
 			scene_camera = self.scene_widget.scene.camera
 			box_to_drag = self.boxes_in_scene[current_box]
 			box_name = self.box_indices[current_box]
 			volume_to_drag = self.volumes_in_scene[current_box]
 			volume_name = self.volume_indices[current_box]
-			mat = rendering.Material()
-			mat.shader = "unlitLine"
-			curr_x = 0.0
-			curr_y = 0.0
-			scaling_factor = 0.001
+
+
+			#if the user right clicks and holds shift while dragging
+			#check to see if it is the initial mouse button down event
 			if event.is_button_down(
 					gui.MouseButton.RIGHT) and event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(
 					gui.KeyModifier.SHIFT):
-				curr_x = event.x
-				curr_y = event.y
-				print(curr_x, curr_y)
+				self.curr_x = event.x - self.scene_widget.frame.x	#set the initial position of the click
+				self.curr_y = event.y - self.scene_widget.frame.y
+				print(self.curr_x, self.curr_y)
 
+			#otherwise it's the drag part of the event, continually translate current box by the difference between
+			#start position and current position, multiply by scaling factor due to size of grid
 			elif event.is_button_down(
 					gui.MouseButton.RIGHT) and event.type == gui.MouseEvent.Type.DRAG and event.is_modifier_down(
 					gui.KeyModifier.SHIFT):
+
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, box_name)
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
-				x_diff = (event.x - curr_x) * scaling_factor
-				y_diff = (event.y - curr_y) * scaling_factor
-				print(x_diff, y_diff)
+				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, "coord_frame")
+				prev_pos = scene_camera.unproject(self.curr_x, self.curr_y, self.average_depth,
+												  self.scene_widget.frame.width, self.scene_widget.frame.height)
+				curr_pos = scene_camera.unproject(event.x, event.y, self.average_depth,
+												  self.scene_widget.frame.width, self.scene_widget.frame.height)
+				x_diff = curr_pos[0] - prev_pos[0]
+				y_diff = curr_pos[1] - prev_pos[1]
+
 				if self.z_drag:  # if z_drag is on
-					box_to_drag.translate((0, 0, y_diff))
-					volume_to_drag.translate((0, 0, y_diff))
+					box_to_drag.translate((0, 0, x_diff))
+					volume_to_drag.translate((0, 0, x_diff))
 				else:
 					box_to_drag.translate((x_diff, y_diff, 0))
 					volume_to_drag.translate((x_diff, y_diff, 0))
-				self.scene_widget.scene.add_geometry(box_name, box_to_drag, mat)
+				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
 				self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
-				curr_x = event.x
-				curr_y = event.y
+				coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, box_to_drag.center)
+				self.scene_widget.scene.add_geometry("coord_frame", coord_frame, self.coord_frame_mat)
+
+				self.update_props()
+				self.scene_widget.force_redraw()
+				self.point_cloud.post_redraw()
+
 			return gui.Widget.EventCallbackResult.CONSUMED
 		return gui.Widget.EventCallbackResult.IGNORED
 
@@ -278,7 +367,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.Material()
+			prev_mat = rendering.MaterialRecord()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -289,18 +378,18 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.Material()
+		frame_mat = rendering.MaterialRecord()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
+		self.update_props()
 
 	#This method adds cube mesh volumes to preexisting bounding boxes
 	#Adds an initial coordinate frame to the scene
 	def create_box_scene(self, scene, boxes, extrinsics):
-		coord_frame_mat = rendering.Material()
-		coord_frame_mat.shader = "defaultLit"
+		coord_frame_mat = self.coord_frame_mat
 		frame_to_add = o3d.geometry.TriangleMesh.create_coordinate_frame()
 		scene.scene.add_geometry("coord_frame", frame_to_add, coord_frame_mat, False)
 		for box in boxes:
@@ -325,6 +414,100 @@ class Annotation:
 		
 		return gui.Widget.EventCallbackResult.IGNORED
 
+	#when something changes with a box, that means it is currently selected
+	#update the properties in the property window
+	def update_props(self):
+		current_box = self.previous_index
+		box_object = self.boxes_in_scene[current_box]
+
+		box_center = box_object.center
+		box_rotate = box_object.R
+		box_rotate_x = math.atan2(box_rotate[2][1], box_rotate[2][2])
+		box_rotate_y = math.atan2((-1 * box_rotate[2][0]), math.sqrt((box_rotate[2][1] ** 2) + (box_rotate[2][2] ** 2)))
+		box_rotate_z = math.atan2(box_rotate[1][0], box_rotate[0][0])
+		box_scale = box_object.extent
+
+
+		self.trans_x.text_value = "{:.3f}".format(box_center[0])
+		self.trans_y.text_value = "{:.3f}".format(box_center[1])
+		self.trans_z.text_value = "{:.3f}".format(box_center[2])
+
+		self.rot_x.text_value = "{:.3f}".format(math.degrees(box_rotate_x))
+		self.rot_y.text_value = "{:.3f}".format(math.degrees(box_rotate_y))
+		self.rot_z.text_value = "{:.3f}".format(math.degrees(box_rotate_z))
+
+		self.scale_x.text_value = "{:.3f}".format(box_scale[0])
+		self.scale_y.text_value = "{:.3f}".format(box_scale[1])
+		self.scale_z.text_value = "{:.3f}".format(box_scale[2])
+
+		self.box_props_selected = [
+			box_center[0], box_center[1], box_center[2],
+			box_rotate_x, box_rotate_y, box_rotate_z,
+			box_scale[0], box_scale[1], box_scale[2]
+		]
+		self.cw.post_redraw()
+
+	def property_change_handler(self, value, prop, axis):
+		value_as_float = float(value)
+		if prop == "trans":
+			self.translate_box(axis, value_as_float)
+		elif prop == "rot":
+			self.rotate_box(axis, value_as_float)
+		elif prop == "scale":
+			self.scale_box(axis, value_as_float)
+		else:
+			print("Changed Label!")
+
+
+
+	def translate_box(self, axis, value):
+		print("TRANSLATE")
+		current_box = self.previous_index
+		box_to_drag = self.boxes_in_scene[current_box]
+		box_name = self.box_indices[current_box]
+		volume_to_drag = self.volumes_in_scene[current_box]
+		volume_name = self.volume_indices[current_box]
+
+		self.scene_widget.scene.remove_geometry(box_name)
+		self.scene_widget.scene.remove_geometry(volume_name)
+		self.scene_widget.scene.remove_geometry("coord_frame")
+		if axis == "x":
+			diff = value - self.box_props_selected[0]
+			box_to_drag.translate([diff, 0, 0])
+			volume_to_drag.translate([diff, 0, 0])
+
+		elif axis == "y":
+			diff = value - self.box_props_selected[1]
+			box_to_drag.translate([0, diff, 0])
+			volume_to_drag.translate([0, diff, 0])
+		else:
+			diff = value - self.box_props_selected[2]
+			box_to_drag.translate([0, 0, diff])
+			volume_to_drag.translate([0, 0, diff])
+
+		coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, box_to_drag.center)
+
+		self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
+		self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
+		self.scene_widget.scene.add_geometry("coord_frame", coord_frame, self.coord_frame_mat)
+		self.update_props()
+		self.point_cloud.post_redraw()
+
+	def rotate_box(self, axis, value):
+		if axis == "x":
+			print("Rotate X" + value)
+		elif axis == "y":
+			print("Rotate Y" + value)
+		else:
+			print("Rotate Z" + value)
+	def scale_box(self, axis, value):
+		print("SCALE")
+		if axis == "x":
+			print("Scale X" + value)
+		elif axis == "y":
+			print("Scale Y" + value)
+		else:
+			print("Scale Z" + value)
 	#general cube_mesh function to create cube mesh from bounding box information
 	#positions cube mesh at center of bounding box allowing the boxes to be selectable
 	def add_volume(self, box):
