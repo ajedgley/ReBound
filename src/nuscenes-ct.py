@@ -117,6 +117,8 @@ def extract_bounding(nusc, sample, frame_num, output_path):
     Returns:
         None
         """
+    tokens = []
+    instance_tokens = []
     origins = []
     sizes = []
     rotations = []
@@ -124,9 +126,11 @@ def extract_bounding(nusc, sample, frame_num, output_path):
     confidences = []
     
     # Get translation, rotation, dimensions, and origins for bounding boxes for each annotation
-    for i in range(0, len(sample['anns']) - 1):
+    for i in range(0, len(sample['anns'])):
         token = sample['anns'][i]
+        tokens.append(token)
         annotation_metadata = nusc.get('sample_annotation', token)
+        instance_tokens.append(annotation_metadata['instance_token'])
         # Create nuscenes box object so we can easily transform this box to the vehicle frame that our dataset requires
         box = Box(annotation_metadata['translation'], annotation_metadata['size'], Quaternion(annotation_metadata['rotation']))
 
@@ -147,7 +151,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         # Confidence for ground truth data is always 100
         confidences.append(100)
         
-    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, data={"token":tokens, "instance_token":instance_tokens})
 
 def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data):
     """Similar to extract_bounding, but specifically to read in predicted data given by a user
@@ -328,6 +332,7 @@ def convert_dataset(output_path, scene_name, pred_data):
     setup_annotation_map(output_path)
 
     # Extract sample data from scene
+    timestamps = []
     while sample['next'] != '':
         # Extract all the relevant data from the nuScenes dataset for our scene. The variable 'sample' is the frame
         # Note: This is NOT multithreaded for nuScenes data because each scene is small enough that this runs relatively quickly.
@@ -335,9 +340,12 @@ def convert_dataset(output_path, scene_name, pred_data):
         extract_bounding(nusc, sample, frame_num, output_path)
         extract_rgb(nusc, sample, frame_num, output_path)
         extract_lidar(nusc, sample, frame_num, output_path)
+        timestamps.append(sample['token'])
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
         dataformat_utils.print_progress_bar(frame_num, frame_count)
+    with open(output_path + "/timestamps.json","w") as f:
+        json.dump({"timestamps":timestamps}, f, indent=0)
 
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":
@@ -355,6 +363,8 @@ if __name__ == "__main__":
     pred_data = {}
     if pred_path != "":
         pred_data = json.load(open(pred_path))
+    input_path += ("" if input_path[-1] == "/" else "/")
+    output_path += ("" if output_path[-1] == "/" else "/")
 
     nusc = NuScenes(ver_name, input_path, True)
 
@@ -380,4 +390,4 @@ if __name__ == "__main__":
     
 
     for scene_name in scene_names:
-        convert_dataset(output_path + "/" + scene_name, scene_name, pred_data)
+        convert_dataset(output_path + scene_name, scene_name, pred_data)
