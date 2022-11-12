@@ -38,18 +38,19 @@ class Annotation:
 		self.boxes_in_scene = boxes_in_scene #current bounding box objects in scene
 		self.volume_indices = [] #name references for cube volumes in scene
 		self.volumes_in_scene = [] #the current cube volume objects in scene
-		#
-		self.box_selected = ""
+		
+		self.box_selected = None
 		self.previous_index = -1 #-1 denotes, no box selected
 		#used to generate unique ids for boxes and volumes
 		self.box_count = 0
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 		self.coord_frame = "coord_frame"
 		self.z_drag = False
+		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
-		temp_boxes = boxes.copy()
+		self.temp_boxes = boxes.copy()
 
 		#initialize the scene with transparent volumes to allow mouse interactions with boxes
 		self.create_box_scene(scene_widget, boxes_to_render, frame_extrinsic)
@@ -67,13 +68,18 @@ class Annotation:
 		toggle_axis_button.set_on_clicked(self.toggle_axis)
 		add_box_horiz.add_child(add_box_button)
 		add_box_horiz.add_child(toggle_axis_button)
-		# button for saving annotation changes
-		# save as button canceled in the name of mvp
+		
+		# buttons for saving/saving as annotation changes
 		save_annotation_horiz = gui.Horiz()
 		save_annotation_button = gui.Button("Save Changes")
-		save_partial = functools.partial(self.save_changes_to_json, temp_boxes=temp_boxes, path=path)
+		save_partial = functools.partial(self.save_changes_to_json, path=path)
 		save_annotation_button.set_on_clicked(save_partial)
+		
+		save_as_button = gui.Button("Save As")
+		save_as_button.set_on_clicked(self.save_as)
+		
 		save_annotation_horiz.add_child(save_annotation_button)
+		save_annotation_horiz.add_child(save_as_button)
 
 		# button for exiting annotation mode
 		exit_annotation_horiz = gui.Horiz()
@@ -81,18 +87,37 @@ class Annotation:
 		exit_partial = functools.partial(self.exit_annotation_mode, widget=scene_widget)
 		exit_annotation_button.set_on_clicked(exit_partial)
 		exit_annotation_horiz.add_child(exit_annotation_button)
+		
+		# add selected box info tracking here?
+		
+		# deletes bounding box, should only be enabled if a bounding box is selected
+		delete_annotation_horiz = gui.Horiz()
+		delete_annotation_button = gui.Button("Delete Annotation")
+		delete_annotation_button.set_on_clicked(self.delete_annotation)
+		delete_annotation_horiz.add_child(delete_annotation_button)
 
-		# add various metrics and number thingies used to display info about the current bbox
-		click_partial = functools.partial(self.get_point_depth, widget=scene_widget)
-		scene_widget.set_on_mouse(click_partial)
+		# empty horiz, just cuz i think exit_annotation looks better at the bottom
+		empty_horiz = gui.Horiz()
 
 		# adding all of the horiz to the vert, in order
 		layout.add_child(add_box_horiz)
 		layout.add_child(save_annotation_horiz)
+		layout.add_child(delete_annotation_horiz)
+		
+		layout.add_child(empty_horiz)
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
+		
+		# Event handlers
+		
+		# sets up onclick box selection
+		click_partial = functools.partial(self.get_point_depth, widget=scene_widget)
+		scene_widget.set_on_mouse(click_partial)
 
+		# sets up keyboard event handling
+		key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
+		scene_widget.set_on_key(key_partial)
 
 
 	# Intermediate helper function that allows a user to select an annotation type from a dropdown list
@@ -119,6 +144,7 @@ class Annotation:
 		layout.add_child(button_layout)
 		dialog.add_child(layout)
 		self.cw.show_dialog(dialog)
+		
 	# function should:
 	# close the exiting control panel
 	# idk, restore the state as if the program just reopened
@@ -138,7 +164,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr] #create_volume uses box meta data to create mesh
 
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -185,7 +211,7 @@ class Annotation:
 					event.x, event.y, depth, widget.frame.width, widget.frame.height)
 				output = "({:.3f}, {:.3f}, {:.3f})".format(
 					world[0], world[1], world[2])
-				print(output)
+				#print(output)
 				get_nearest(world)
 
 			def get_nearest(world_coords): #searches boxes in the scene for shortest dist
@@ -206,14 +232,15 @@ class Annotation:
 			widget.scene.scene.render_to_depth_image(get_depth)
 			return gui.Widget.EventCallbackResult.HANDLED
 
-		else: #So Open3D only passes one event to one event handler so the drag function gets moved here
+		#So Open3D only passes one event to one event handler so the drag function gets moved here
+		elif event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(gui.KeyModifier.SHIFT): 
 			current_box = self.previous_index
 			scene_camera = self.scene_widget.scene.camera
 			box_to_drag = self.boxes_in_scene[current_box]
 			box_name = self.box_indices[current_box]
 			volume_to_drag = self.volumes_in_scene[current_box]
 			volume_name = self.volume_indices[current_box]
-			mat = rendering.MaterialRecord()
+			mat = rendering.Material()
 			mat.shader = "unlitLine"
 			curr_x = 0.0
 			curr_y = 0.0
@@ -244,7 +271,6 @@ class Annotation:
 				curr_x = event.x
 				curr_y = event.y
 			return gui.Widget.EventCallbackResult.CONSUMED
-
 		return gui.Widget.EventCallbackResult.IGNORED
 
 	#select_box takes a box name (string) and checks to see if a previous box has been selected
@@ -252,7 +278,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.MaterialRecord()
+			prev_mat = rendering.Material()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -263,9 +289,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.MaterialRecord()
+		frame_mat = rendering.Material()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -273,7 +299,7 @@ class Annotation:
 	#This method adds cube mesh volumes to preexisting bounding boxes
 	#Adds an initial coordinate frame to the scene
 	def create_box_scene(self, scene, boxes, extrinsics):
-		coord_frame_mat = rendering.MaterialRecord()
+		coord_frame_mat = rendering.Material()
 		coord_frame_mat.shader = "defaultLit"
 		frame_to_add = o3d.geometry.TriangleMesh.create_coordinate_frame()
 		scene.scene.add_geometry("coord_frame", frame_to_add, coord_frame_mat, False)
@@ -290,6 +316,15 @@ class Annotation:
 			self.box_count += 1
 
 		self.point_cloud.post_redraw()
+		
+	def key_event_handler(self, event, widget):
+		# delete button handler
+		if event.key == 127 and event.type == event.Type.DOWN:
+			self.delete_annotation()
+			return gui.Widget.EventCallbackResult.CONSUMED
+		
+		return gui.Widget.EventCallbackResult.IGNORED
+
 	#general cube_mesh function to create cube mesh from bounding box information
 	#positions cube mesh at center of bounding box allowing the boxes to be selectable
 	def add_volume(self, box):
@@ -326,10 +361,39 @@ class Annotation:
 	#toggles horizontal or vertical drag
 	def toggle_axis(self):
 		self.z_drag = not self.z_drag
+
+	# deletes the currently selected annotation as well as all its associated data, else nothing happens
+	def delete_annotation(self):
+		if self.box_selected:
+			current_box = self.previous_index
+			box_name = self.box_indices[current_box]
+			volume_name = self.volume_indices[current_box]
+
+			self.temp_boxes["boxes"].pop(current_box)
+			self.box_indices.pop(current_box)
+			self.volume_indices.pop(current_box)
+			self.boxes_in_scene.pop(current_box)
+			self.box_indices.pop(current_box)
+					
+			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, box_name)
+			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
+			
+			self.point_cloud.post_redraw()
+
+	
 	# overwrites currently open file with temp_boxes
-	def save_changes_to_json(self, temp_boxes, path):
+	def save_changes_to_json(self, path):
+		self.cw.close_dialog()
 		with open(path, "w") as outfile:
-			outfile.write(json.dumps(temp_boxes))
+			outfile.write(json.dumps(self.temp_boxes))
+
+	def save_as(self):
+		# pops open one of those nifty file browsers to let user select place to save
+		file_dialog = gui.FileDialog(gui.FileDialog.SAVE, "Choose file to save", self.cw.theme)
+		file_dialog.add_filter(".json", "JSON file (.json)")
+		file_dialog.set_on_cancel(self.cw.close_dialog)
+		file_dialog.set_on_done(self.save_changes_to_json)
+		self.cw.show_dialog(file_dialog)
 
 	# getters and setters below
 	def getCw(self):

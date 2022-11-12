@@ -154,7 +154,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -613,7 +613,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
 
@@ -1056,6 +1056,7 @@ class Window:
     	
     	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
     	self.controls.close()
+    	self.image_window.close()
     	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
                                             self.boxes_to_render, self.boxes_in_scene, self.box_indices,
                                             self.all_pred_annotations, self.path_string)
@@ -1100,20 +1101,6 @@ class Window:
             lidar_sensors.append(lidar_name)
 
         return (camera_sensors, lidar_sensors)
-
-
-    # overwrites currently open file with temp_boxes
-    def save_changes_to_json(temp_boxes, path):
-        with open(path, "w") as outfile:
-            outfile.write(json.dumps(temp_boxes))
-
-
-    # prompt with user input for new path, then saves
-    def save_as(self, temp_boxes, path):
-        print(path)
-        self.save_changes_to_json(temp_boxes, path)
-
-
 
 if __name__ == "__main__":
     lct_dir = parse_options()
