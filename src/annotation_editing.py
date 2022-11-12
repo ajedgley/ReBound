@@ -1,5 +1,5 @@
 """
-	functions for editing, we'll see how useful this file is
+	functions for editing
 """
 import math
 
@@ -48,6 +48,7 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
+		#transparent volume material
 		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
@@ -344,12 +345,13 @@ class Annotation:
 				x_diff = curr_pos[0] - prev_pos[0]
 				y_diff = curr_pos[1] - prev_pos[1]
 
-				if self.z_drag:  # if z_drag is on
+				if self.z_drag:  # if z_drag is on, translate by z axis only
 					box_to_drag.translate((0, 0, x_diff))
 					volume_to_drag.translate((0, 0, x_diff))
 				else:
 					box_to_drag.translate((x_diff, y_diff, 0))
 					volume_to_drag.translate((x_diff, y_diff, 0))
+
 				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
 				self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
 				coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, box_to_drag.center)
@@ -440,6 +442,7 @@ class Annotation:
 		self.scale_y.text_value = "{:.3f}".format(box_scale[1])
 		self.scale_z.text_value = "{:.3f}".format(box_scale[2])
 
+		#updates array of all properties to allow referencing previous values
 		self.box_props_selected = [
 			box_center[0], box_center[1], box_center[2],
 			box_rotate_x, box_rotate_y, box_rotate_z,
@@ -459,7 +462,7 @@ class Annotation:
 			print("Changed Label!")
 
 
-
+	#used by property fields to move box along specified axis to new position -> value
 	def translate_box(self, axis, value):
 		print("TRANSLATE")
 		current_box = self.previous_index
@@ -493,6 +496,7 @@ class Annotation:
 		self.update_props()
 		self.point_cloud.post_redraw()
 
+	#Need to add handler functions to rotate and scale boxes on field change
 	def rotate_box(self, axis, value):
 		if axis == "x":
 			print("Rotate X" + value)
