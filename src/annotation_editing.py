@@ -379,6 +379,9 @@ class Annotation:
 			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
 			
 			self.point_cloud.post_redraw()
+			
+			self.previous_index = -1
+			self.box_selected = None
 
 	
 	# overwrites currently open file with temp_boxes
