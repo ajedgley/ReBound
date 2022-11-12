@@ -138,7 +138,7 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     copyfile(input_path, full_path)
 
-def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False, data=None):   
+def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False):   
     """Adds box data for one frame
     Args:
         path: path to LCT directory
@@ -188,10 +188,6 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['rotation'] = rotations[i]
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
-        if data:
-            box['data'] = {}
-            for k in data.keys():
-                box['data'][k] = data[k][i]
         box_data['boxes'].append(box)
 
     with open(json_path, 'w') as f:
@@ -232,22 +228,7 @@ def create_ego_directory(path, frame, translation, rotation):
     with open(json_path, 'w') as f:
         json.dump(ego_data, f)
 
-def add_metadata(path, source_format, files):
-    """Adds metadata needed for exporting
-    Args:
-    	path: path to LCT dir
-    	source_format: the original data format (Argoverse, nuScenes, or Waymo)
-    	files: list of the files containing extra data used for exporting
-    Returns:
-    	None
-    	"""
-	
-    metadata = {}
-    metadata['source-format'] = source_format
-    metadata['filenames'] = files
-    
-    with open(path + '/metadata.json', 'w') as f:
-        json.dump(metadata, f)
+
 
 
 def print_progress_bar(frame_num, total):
