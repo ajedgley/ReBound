@@ -1,6 +1,7 @@
 import getopt
 import json
 import re
+import open3d as o3d
 import os
 import sys
 import numpy as np
@@ -8,8 +9,7 @@ from nuscenes.utils.data_classes import Quaternion
 from nuscenes.utils.data_classes import Box
 from secrets import token_hex
 from utils import dataformat_utils
-
-THRESHOLD = 10**-8
+from utils import geometry_utils
 
 def parse_options():
     """Read in user command line input to get directory paths which will be used for input and output.
@@ -66,14 +66,14 @@ def parse_options():
 
     return (input_path, output_path, scene_names, pred_path, ver_name)
 
-def extract_bounding(frame_num, output_path):
+def extract_frame(frame_num, output_path):
     # Necessary files from generic data format
     with open(output_path + "/bounding/" + str(frame_num) + "/boxes.json") as f:
             bounding = json.load(f)
     with open(output_path + "/ego/" + str(frame_num) + ".json") as f:
             ego = json.load(f)
+    pcd = o3d.io.read_point_cloud(output_path + "pointcloud/LIDAR_TOP/" + str(frame_num) + ".pcd").points
 
-    # TODO: test 
     for i in range(len(bounding["boxes"])):
         # Reverting bounding box
         bounding_box = bounding["boxes"][i]
@@ -89,18 +89,25 @@ def extract_bounding(frame_num, output_path):
         data["token"] = ann_token
         data["sample_token"] = sample_token
         data["instance_token"] = instance_token
-        # TODO: need user input for attributes
+        # Default to none
         data["attribute_tokens"] = (sample_annotations[ann_token]["attribute_tokens"] if ann_token in sample_annotations else [])
-        # TODO: users needs to have good visibility in order to annotate
+        # Default to 4
         data["visibility_token"] = (sample_annotations[ann_token]["visibility_token"] if ann_token in sample_annotations else 4)
-        # TODO: Ask about floating point errors (zero out doesn't seem to work)
-        data["translation"] = box.center.tolist()
-        data["size"] = bounding_box["size"]
-        data["rotation"] = box.orientation.q.tolist()
-        # TODO: calculate
-        data["num_lidar_pts"] = 0
-        # TODO: calculate
-        data["num_radar_pts"] = 0
+        # Use original translation, size, and rotation if not edited or added
+        if (ann_token in sample_annotations) and (bounding_box["data"]):
+            data["translation"] = sample_annotations[ann_token]["translation"]
+            data["size"] = sample_annotations[ann_token]["size"]
+            data["rotation"] = sample_annotations[ann_token]["rotation"]
+            data["num_lidar_pts"] = sample_annotations[ann_token]["num_lidar_pts"]
+            data["num_radar_pts"] = sample_annotations[ann_token]["num_radar_pts"]
+        else:
+            data["translation"] = box.center.tolist()
+            data["size"] = bounding_box["size"]
+            data["rotation"] = box.orientation.q.tolist()
+            # Calculating num_lidar_pts and num_radar_pts is expensive
+            data["num_lidar_pts"] = geometry_utils.compute_interior_points(box, pcd)
+            # See for details: https://forum.nuscenes.org/t/radar-points-counting/58
+            data["num_radar_pts"] = 0
         # Update this later
         data["prev"] = "" 
         data["next"] = ""
@@ -109,7 +116,6 @@ def extract_bounding(frame_num, output_path):
         # Update instance
         data = {}
         data["token"] = instance_token
-        # TODO: change to update based on last, not first
         if bounding_box["annotation"] in category:
             # Category exists
             data["category_token"] = category[bounding_box["annotation"]]["token"]
@@ -133,9 +139,11 @@ def extract_bounding(frame_num, output_path):
             prev_ann_token[instance_token] = ann_token
             new_instance[data["token"]] = data
         else:
-            # Add to existing instance
+            # Update existing instance
+            # Each instance will have one category (based on the latest annotation)
+            new_instance[instance_token]["category_token"] = category[bounding_box["annotation"]]["token"]
             new_instance[instance_token]["nbr_annotations"] += 1
-            new_instance[instance_token]["last_annotation_token"] = ann_token
+            new_instance[instance_token]["last_annotation_token"] = ann_token 
 
             # Add to end of linked list and update previous ann_token
             new_annotation[prev_ann_token[instance_token]]["next"] = ann_token
@@ -154,7 +162,7 @@ def revert_dataset(input_path, output_path):
 
     # Iterate through each frame
     while frame_num < frame_count:
-        extract_bounding(frame_num, output_path)
+        extract_frame(frame_num, output_path)
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
