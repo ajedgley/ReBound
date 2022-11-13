@@ -41,7 +41,7 @@ CONFIDENCE = 4
 COLOR = 5
 
 #Taken from http://phrogz.net/tmp/24colors.html
-colorlist = [(255,0,0), (255,255,0), (0,234,255), (170,0,255), (255,127,0), (191,255,0), (0,149,255), (255,0,170), (255,212,0), (106,255,0), (0,64,255), (185,237,224), (143,35,35), (35,98,143), (107,35,143), (79,143,35)]
+colorlist = [(255,0,0), (255,255,0), (0,234,255), (170,0,255), (255,127,0), (191,255,0), (0,149,255), (255,0,170), (255,212,0), (106,255,0), (0,64,255), (185,237,224), (143,35,35), (35,98,143), (107,35,143), (79,143,35), (140, 102, 37), (10, 104, 22), (243, 177, 250)]
 # Parse CLI args and validate input
 def parse_options():
     """ This parses the CLI arguments and validates the arguments
@@ -154,7 +154,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -613,7 +613,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
 
@@ -1059,7 +1059,7 @@ class Window:
     	self.image_window.close()
     	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
                                             self.boxes_to_render, self.boxes_in_scene, self.box_indices,
-                                            self.all_pred_annotations, self.path_string)
+                                            self.all_pred_annotations, self.path_string, self.color_map, self.pred_color_map)
 
 	# self.widget3d
 
@@ -1079,7 +1079,7 @@ class Window:
         self.update_bounding()
         self.update_image()
         self.update_pointcloud()
-
+	    
     def get_cams_and_pointclouds(self, path):
         """This gets the names of the cameras and lidar sensors
             Args:

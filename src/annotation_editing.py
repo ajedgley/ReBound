@@ -30,7 +30,7 @@ COLOR = 5
 
 class Annotation:
 	# returns created window with all its buttons and whatnot
-	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render, boxes_in_scene, box_indices, annotation_types, path):
+	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render, boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map):
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
@@ -40,6 +40,8 @@ class Annotation:
 		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
 		self.volume_indices = [] 					#name references for cube volumes in scene
 		self.volumes_in_scene = [] 					#current cube volume objects in scene
+		self.color_map = color_map
+		self.pred_color_map = pred_color_map
 		
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
@@ -49,18 +51,18 @@ class Annotation:
 
 		#common materials
 		#transparent volume material
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight = rendering.Material()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.MaterialRecord()
+		self.line_mat = rendering.Material()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat = rendering.Material()
 		self.coord_frame_mat.shader = "defaultLit"
 
 		self.coord_frame = "coord_frame"
@@ -96,6 +98,10 @@ class Annotation:
 		trans_collapse = gui.CollapsableVert("Position", 0, margin)
 		rot_collapse = gui.CollapsableVert("Rotation", 0, margin)
 		scale_collapse = gui.CollapsableVert("Scale", 0, margin)
+		self.annotation_type = gui.Label("                                    ")
+		self.annotation_class = gui.Combobox()
+		for annotation in self.all_pred_annotations:
+			self.annotation_class.add_item(annotation)
 		self.trans_x = gui.TextEdit()
 		self.trans_x.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="x"))
 		self.trans_y = gui.TextEdit()
@@ -114,7 +120,17 @@ class Annotation:
 		self.scale_y.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="y"))
 		self.scale_z = gui.TextEdit()
 		self.scale_z.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="z"))
-
+		
+		annot_type = gui.Horiz()
+		annot_type.add_child(gui.Label("Type:"))
+		annot_type.add_child(self.annotation_type)
+		annot_class = gui.Horiz()
+		annot_class.add_child(gui.Label("Class:"))
+		annot_class.add_child(self.annotation_class)
+		annot_vert = gui.Vert()
+		annot_vert.add_child(annot_type)
+		annot_vert.add_child(annot_class)
+		
 		trans_horiz = gui.Horiz(0.50 * em, margin)
 		trans_horiz.add_child(gui.Label("X:"))
 		trans_horiz.add_child(self.trans_x)
@@ -141,7 +157,8 @@ class Annotation:
 		scale_horiz.add_child(gui.Label("Z:"))
 		scale_horiz.add_child(self.scale_z)
 		scale_collapse.add_child(scale_horiz)
-
+		
+		properties_vert.add_child(annot_vert)
 		properties_vert.add_child(trans_collapse)
 		properties_vert.add_child(rot_collapse)
 		properties_vert.add_child(scale_collapse)
@@ -216,6 +233,7 @@ class Annotation:
 		cancel_button = gui.Button("Cancel")
 
 		select_button.set_on_clicked(self.place_bounding_box(annotation_dropdown.selected_text))
+		print(self.cw)
 		cancel_button.set_on_clicked(self.cw.close_dialog())
 		button_layout.add_child(select_button)
 		button_layout.add_child(cancel_button)
@@ -242,7 +260,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr] #create_volume uses box meta data to create mesh
 
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -369,7 +387,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.MaterialRecord()
+			prev_mat = rendering.Material()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -380,9 +398,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.MaterialRecord()
+		frame_mat = rendering.Material()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -421,6 +439,26 @@ class Annotation:
 	def update_props(self):
 		current_box = self.previous_index
 		box_object = self.boxes_in_scene[current_box]
+		scaled_color = tuple(255*x for x in box_object.color)
+			
+		if scaled_color in self.color_map.values():
+			self.annotation_type.text = "Ground Truth"
+			selected = list(self.color_map.keys())[list(self.color_map.values()).index(scaled_color)]
+			if self.annotation_class.get_item(0) != selected:
+				self.annotation_class.clear_items()
+				self.annotation_class.add_item(selected)
+				for annotation in self.color_map:
+					if annotation != selected:
+						self.annotation_class.add_item(annotation)
+		elif scaled_color in self.pred_color_map.values():
+			self.annotation_type.text = "Prediction"
+			selected = list(self.pred_color_map.keys())[list(self.pred_color_map.values()).index(scaled_color)]
+			if self.annotation_class.get_item(0) != selected:
+				self.annotation_class.clear_items()
+				self.annotation_class.add_item(selected)
+				for annotation in self.all_pred_annotations:
+					if annotation != selected:
+						self.annotation_class.add_item(annotation)
 
 		box_center = box_object.center
 		box_rotate = box_object.R
@@ -429,7 +467,7 @@ class Annotation:
 		box_rotate_z = math.atan2(box_rotate[1][0], box_rotate[0][0])
 		box_scale = box_object.extent
 
-
+		
 		self.trans_x.text_value = "{:.3f}".format(box_center[0])
 		self.trans_y.text_value = "{:.3f}".format(box_center[1])
 		self.trans_z.text_value = "{:.3f}".format(box_center[2])
