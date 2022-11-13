@@ -125,8 +125,10 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
     rotations = []
     annotation_names = []
     confidences = []
+    ids = []
+    interior_pts = []
 
-    # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
+    # Get annotation, rotation, confidence level, quaternion, center, diminensions, uuids, and interior points of each bounding box in frame
     annotations = annotations[annotations["timestamp_ns"] == int(timestamp)]
     for annotation in annotations.itertuples():
         origins.append([annotation.tx_m, annotation.ty_m, annotation.tz_m])
@@ -136,7 +138,9 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
         rotations.append(quat.q.tolist())
         # Confidence set to 100 by default for ground truth data
         confidences.append(100)
-    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+        ids.append(annotation.track_uuid)
+        interior_pts.append(annotation.num_interior_pts)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, data = {"id":ids, "interior_pts":interior_pts })
 
 # Main method for converting datasets
 def convert_dataset(input_path, output_path):
@@ -189,7 +193,7 @@ def convert_dataset(input_path, output_path):
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
     # Store timestamps
-    pd.DataFrame(timestamps).to_csv(output_path + 'timestamps.csv')
+    pd.DataFrame(timestamps, columns=['timestamps']).to_csv(output_path + 'timestamps.csv')
 
 if __name__ == "__main__":
     (input_path, output_path, scene_names) = parse_options()

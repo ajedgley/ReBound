@@ -1,14 +1,15 @@
 import getopt
 import json
+import re
+import open3d as o3d
 import os
 import sys
 import numpy as np
-from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import Quaternion
 from nuscenes.utils.data_classes import Box
 from secrets import token_hex
-
-THRESHOLD = 10**-8
+from utils import dataformat_utils
+from utils import geometry_utils
 
 def parse_options():
     """Read in user command line input to get directory paths which will be used for input and output.
@@ -65,14 +66,14 @@ def parse_options():
 
     return (input_path, output_path, scene_names, pred_path, ver_name)
 
-def extract_bounding(sample, frame_num, output_path):
+def extract_frame(frame_num, output_path):
+    # Necessary files from generic data format
     with open(output_path + "/bounding/" + str(frame_num) + "/boxes.json") as f:
             bounding = json.load(f)
     with open(output_path + "/ego/" + str(frame_num) + ".json") as f:
             ego = json.load(f)
+    pcd = o3d.io.read_point_cloud(output_path + "pointcloud/LIDAR_TOP/" + str(frame_num) + ".pcd").points
 
-    tokens = []
-    # TODO: test edit and add
     for i in range(len(bounding["boxes"])):
         # Reverting bounding box
         bounding_box = bounding["boxes"][i]
@@ -80,192 +81,117 @@ def extract_bounding(sample, frame_num, output_path):
         box.rotate(Quaternion(ego["rotation"]))
         box.translate(np.array(ego["translation"]))
 
-        if "nuscenes" in bounding_box["data"]:
-            # Edit annotation
-            token = bounding_box["data"]["nuscenes"]
-            tokens.append(token)
-        
-            # Update annotations json object
-            # TODO: Ask about floating point errors (zero out doesn't seem to work)
-            sample_annotations[token]["translation"] = box.center.tolist()
-            sample_annotations[token]["size"] = bounding_box["size"]
-            sample_annotations[token]["rotation"] = box.orientation.q.tolist()
-
-            # Update instance, will update category for the entire entity
-            # TODO: Will a new category be added, or will one of the existing ones be used
-            category_token = category[bounding_box["annotation"]]
-            instance_token = sample_annotations[token]["instance_token"]
-            instance[instance_token]["category_token"] = category_token
+        # Update annotation
+        ann_token = (bounding_box["data"]["token"] if bounding_box["data"]["token"] != "" else token_hex(16))
+        sample_token = samples[timestamps[frame_num]]
+        instance_token = (bounding_box["data"]["instance_token"] if bounding_box["data"]["instance_token"] != "" else token_hex(16))
+        data = {}
+        data["token"] = ann_token
+        data["sample_token"] = sample_token
+        data["instance_token"] = instance_token
+        # Default to none
+        data["attribute_tokens"] = (sample_annotations[ann_token]["attribute_tokens"] if ann_token in sample_annotations else [])
+        # Default to 4
+        data["visibility_token"] = (sample_annotations[ann_token]["visibility_token"] if ann_token in sample_annotations else 4)
+        # Use original translation, size, and rotation if not edited or added
+        if (ann_token in sample_annotations) and (bounding_box["data"]):
+            data["translation"] = sample_annotations[ann_token]["translation"]
+            data["size"] = sample_annotations[ann_token]["size"]
+            data["rotation"] = sample_annotations[ann_token]["rotation"]
+            data["num_lidar_pts"] = sample_annotations[ann_token]["num_lidar_pts"]
+            data["num_radar_pts"] = sample_annotations[ann_token]["num_radar_pts"]
         else:
-            # Add annotation
-            # Add to sample_annotation
-            ann_token = token_hex(16)
-            sample_token = token_hex(16)
-            instance_token = token_hex(16)
-            print("Adding", ann_token)
-            data = {}
-            data["token"] = ann_token
-            data["sample_token"] = sample_token
-            data["instance_token"] = instance_token
-            data["attribute_tokens"] = [] # TODO: look into
-            data["visibility_token"] = -1 # TODO: calculate
             data["translation"] = box.center.tolist()
             data["size"] = bounding_box["size"]
             data["rotation"] = box.orientation.q.tolist()
-            data["num_lidar_pts"] = -1 # TODO: calculate
-            data["num_radar_pts"] = -1 # TODO: calculate
-            data["prev"] = "" # not able to calculate
-            data["next"] = "" # not able to calculate
-            sample_annotations[data["token"]] = data
-            # Add to instance
-            data = {}
-            data["token"] = instance_token
-            data["category_token"] = category[bounding_box["annotation"]]
+            # Calculating num_lidar_pts and num_radar_pts is expensive
+            data["num_lidar_pts"] = geometry_utils.compute_interior_points(box, pcd)
+            # See for details: https://forum.nuscenes.org/t/radar-points-counting/58
+            data["num_radar_pts"] = 0
+        # Update this later
+        data["prev"] = "" 
+        data["next"] = ""
+        new_annotation[data["token"]] = data
+
+        # Update instance
+        data = {}
+        data["token"] = instance_token
+        if bounding_box["annotation"] in category:
+            # Category exists
+            data["category_token"] = category[bounding_box["annotation"]]["token"]
+        else:
+            # Add new category
+            category_token = token_hex(16)
+            data2 = {}
+            data2["category_token"] = category_token
+            data2["name"] = bounding_box["annotation"]
+            data2["description"] = "new category"
+            category[data2["name"]] = data2
+
+            data["category_token"] = category_token
+        if instance_token not in new_instance:
+            # Create new instance
             data["nbr_annotations"] = 1
             data["first_annotation_token"] = ann_token
             data["last_annotation_token"] = ann_token
-            instance[data["token"]] = data
-            # Add to sample
-            scene_token = nusc.field2token('scene', 'name', scene_name)[0]
-            data = {}
-            data["token"] = sample_token
-            data["timestamp"] = -1 # TODO: maybe be possible to get
-            data["prev"] = -1 # TODO: need timestamp
-            data["next"] = -1 # TODO: need timestamp
-            data["scene_token"] = scene_token
-            samples[data["token"]] = data
-            # Update scene
-            scenes[scene_token]["nbr_samples"] += 1
-            # TODO: need timestamp to update "first_sample_token" and "last_sample_token"
 
-    # TODO: test delete
-    for i in range(0, len(sample['anns']) - 1):
-        # Find deleted annotations
-        ann_token = sample['anns'][i]
-        if ann_token in tokens:
-            continue
-        print("Deleting", ann_token)
-
-        # Delete annotation
-        # Delete from sample_annotations and instance
-        prev = sample_annotations[ann_token]["prev"]
-        next = sample_annotations[ann_token]["next"]
-        sample_token = sample_annotations[ann_token]["sample_token"]
-        instance_token = sample_annotations[ann_token]["instance_token"]
-        sample_annotations.pop(ann_token)
-        instance[instance_token]["nbr_annotations"] -= 1
-        if prev == "" and next == "":
-            instance[instance_token]["first_annotation_token"] = next
-            instance[instance_token]["last_annotation_token"] = prev
-        elif prev == "":
-            instance[instance_token]["prev"] = ""
-            instance[instance_token]["first_annotation_token"] = next
-        elif next == "":
-            instance[instance_token]["next"] = ""
-            instance[instance_token]["last_annotation_token"] = prev
+            # Update previous ann_token
+            prev_ann_token[instance_token] = ann_token
+            new_instance[data["token"]] = data
         else:
-            instance[instance_token]["next"] = next
-            instance[instance_token]["prev"] = prev
-        # Delete from sample and scene
-        prev = samples[sample_token]["prev"]
-        next = samples[sample_token]["next"]
-        scene_token = samples[sample_token]["scene_token"]
-        samples.pop(sample_token)
-        scenes[scene_token]["nbr_samples"] -= 1
-        if prev == "" and next == "":
-            scenes[scene_token]["first_sample_token"] = next
-            scenes[scene_token]["last_sample_token"] = prev
-        elif prev == "":
-            samples[next]["prev"] = ""
-            scenes[scene_token]["first_sample_token"] = next
-        elif next == "":
-            samples[prev]["next"] = ""
-            scenes[scene_token]["last_sample_token"] = prev
-        else:
-            samples[prev]["next"] = next
-            samples[next]["prev"] = prev
+            # Update existing instance
+            # Each instance will have one category (based on the latest annotation)
+            new_instance[instance_token]["category_token"] = category[bounding_box["annotation"]]["token"]
+            new_instance[instance_token]["nbr_annotations"] += 1
+            new_instance[instance_token]["last_annotation_token"] = ann_token 
 
-def convert_dataset(output_path, scene_name):
-    # Validate the scene name passed in
-    try:
-        scene_token = nusc.field2token('scene', 'name', scene_name)[0]
-    except Exception:
-        print("\n Not a valid scene name for this dataset!")
-        exit(2)
-    
-    scene = nusc.get('scene', scene_token)
-    sample = nusc.get('sample', scene['first_sample_token'])
+            # Add to end of linked list and update previous ann_token
+            new_annotation[prev_ann_token[instance_token]]["next"] = ann_token
+            new_annotation[ann_token]["prev"] = prev_ann_token[instance_token]
+            prev_ann_token[instance_token] = ann_token
+
+def revert_dataset(input_path, output_path):
+    # Setup progress bar
     frame_num = 0
+    frame_count = 0
+    for d in os.scandir(output_path + "bounding/"):
+        res = re.match(r"\d+",d.name)
+        if d.is_dir() and res:
+            frame_count += 1
+    dataformat_utils.print_progress_bar(0, frame_count)
 
     # Iterate through each frame
-    while sample['next'] != '':
-        # print(f"Frame: {frame_num}")
-        extract_bounding(sample, frame_num, output_path)
+    while frame_num < frame_count:
+        extract_frame(frame_num, output_path)
         frame_num += 1
-        sample = nusc.get('sample', sample['next'])
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
 
-    # TODO: Write updated json files somewhere
-    with open("/Users/joshualiu/CMSC435/revert/sample_annotations.json","w") as f:
-        json.dump(list(sample_annotations.values()), f, indent=0)
+    # TODO: Write updated json files to input
+    with open("/Users/joshualiu/CMSC435/revert/sample_annotation.json","w") as f:
+        json.dump(list(new_annotation.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/sample.json","w") as f:
         json.dump(list(samples.values()), f, indent=0)
-    with open("/Users/joshualiu/CMSC435/revert/scene.json","w") as f:
-        json.dump(list(scenes.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/category.json","w") as f:
         json.dump(list(category.values()), f, indent=0)
     with open("/Users/joshualiu/CMSC435/revert/instance.json","w") as f:
-        json.dump(list(instance.values()), f, indent=0)
-
-# sanity check
-def compare_nescene():
-    print("Sanity Check")
-    with open("/Users/joshualiu/CMSC435/nuScenesv1/v1.0-mini/v1.0-mini/sample_annotation.json") as f1:
-        data1 = json.load(f1)
-    with open("/Users/joshualiu/CMSC435/updated_annotations.json") as f2:
-        data2 = json.load(f2)
-    
-    for i in range(len(data1)):
-        if data1[i]["token"] != data2[i]["token"]:
-            print("Token doesn't match")
-        if data1[i]["sample_token"] != data2[i]["sample_token"]:
-            print("Sample token doesn't match")
-        if data1[i]["instance_token"] != data2[i]["instance_token"]:
-            print("Instance token doesn't match")
-        if data1[i]["visibility_token"] != data2[i]["visibility_token"]:
-            print("Visibility token doesn't match")
-        for j in range(len(data1[i]["translation"])):
-            if abs(data1[i]["translation"][j] - data2[i]["translation"][j]) > THRESHOLD:
-                print(data1[i]["translation"][j], data2[i]["translation"][j])
-                print("Translation doesn't match")
-        for j in range(len(data1[i]["size"])):
-            if abs(data1[i]["size"][j] - data2[i]["size"][j]) > THRESHOLD:
-                print("Size doesn't match")
-        for j in range(len(data1[i]["rotation"])):
-            if abs(data1[i]["rotation"][j] - data2[i]["rotation"][j]) > THRESHOLD:
-                print("Rotation doesn't match")
-        if data1[i]["prev"] != data2[i]["prev"]:
-            print("Prev doesn't match")
-        if data1[i]["next"] != data2[i]["next"]:
-            print("Next doesn't match")
-        if data1[i]["num_lidar_pts"] != data2[i]["num_lidar_pts"]:
-            print("Num lidar pts doesn't match")
-        if data1[i]["num_radar_pts"] != data2[i]["num_radar_pts"]:
-            print("Num radar pts doesn't match")
+        json.dump(list(new_instance.values()), f, indent=0)
 
 if __name__ == "__main__":
     # Read in input database and output directory paths
-    (input_path, output_path, scene_names, pred_path,ver_name) = parse_options()
+    (input_path, output_path, scene_names, pred_path, ver_name) = parse_options()
     
-    # Validate whether the database path passed in is valid and if the output directory path is valid
-    # If the output directory exists, then use that directory. Otherwise, create a new directory at the
-    # specified path. 
     print(f"Version name: {ver_name}")
     print(f"Input path: {input_path}")
-    nusc = NuScenes(ver_name, input_path, True)
 
-    path = os.getcwd()
+    # Verify input path exists
+    input_path += ("" if input_path[-1] == "/" else "/")
+    output_path += ("" if output_path[-1] == "/" else "/")
+    if not os.path.exists(input_path + ver_name):
+        sys.exit("Invalid input path. Please check paths entered and try again.")
+    if not os.path.exists(output_path):
+        sys.exit("Invalid output path. Please check paths entered and try again.")
 
-    # Necessary files to update annotations
+    # Necessary files from original nuscenes to update annotations
     with open(input_path + ver_name + "/sample_annotation.json") as f:
         data = json.load(f)
         sample_annotations = {}
@@ -276,11 +202,6 @@ if __name__ == "__main__":
         samples = {}
         for i in range(len(data)):
             samples[data[i]["token"]] = data[i]
-    with open(input_path + ver_name + "/scene.json") as f:
-        data = json.load(f)
-        scenes = {}
-        for i in range(len(data)):
-            scenes[data[i]["token"]] = data[i]
     with open(input_path + ver_name +  "/category.json") as f:
         data = json.load(f)
         category = {}
@@ -291,13 +212,25 @@ if __name__ == "__main__":
         instance = {}
         for i in range(len(data)):
             instance[data[i]["token"]] = data[i]
+    # Recreating annotation and instance
+    new_annotation = {}
+    new_instance = {}
+    # Keeping track of previous ann_token for each instance
+    prev_ann_token = {}
 
-    #If this was blank, then convert all scenes
+    # If this was blank, then revert all scenes
     if len(scene_names) == 0:
         print("Converting All Scenes...")
-        for scene in nusc.scene:
-            scene_names.append(scene['name'])
+        for scene in os.scandir(output_path):
+            res = re.match(r"scene-\d{4}",scene.name)
+            if not res:
+                continue
+            scene_names.append(scene.name)
         print(scene_names)
 
+    # Revert all the scenes
     for scene_name in scene_names:
-        convert_dataset(output_path + scene_name, scene_name)
+        with open(output_path + scene_name + "/timestamps.json") as f:
+            data = json.load(f)
+            timestamps = data["timestamps"]
+        revert_dataset(input_path + ver_name, output_path + scene_name + "/")
