@@ -1061,7 +1061,7 @@ class Window:
                                             self.boxes_to_render, self.boxes_in_scene, self.box_indices,
                                             self.all_pred_annotations, self.path_string)
 
-	# self.widget3d
+
 
     def close_dialog(self):
         self.controls.close_dialog()

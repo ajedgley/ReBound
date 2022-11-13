@@ -18,7 +18,7 @@ import random
 import os
 import sys
 import json
-import lct
+from lct import Window
 
 ORIGIN = 0
 SIZE = 1
@@ -31,6 +31,9 @@ COLOR = 5
 class Annotation:
 	# returns created window with all its buttons and whatnot
 	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render, boxes_in_scene, box_indices, annotation_types, path):
+		print(*sys.argv)
+		print(os.getcwd())
+	
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
@@ -159,11 +162,10 @@ class Annotation:
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
 
-		# button for exiting annotation mode
+		# button for exiting annotation mode, set_on_click in lct.py for a cleaner restart
 		exit_annotation_horiz = gui.Horiz()
 		exit_annotation_button = gui.Button("Exit Annotation Mode")
-		exit_partial = functools.partial(self.exit_annotation_mode, widget=scene_widget)
-		exit_annotation_button.set_on_clicked(exit_partial)
+		exit_annotation_button.set_on_clicked(self.exit_annotation_mode)
 		exit_annotation_horiz.add_child(exit_annotation_button)
 		
 		# add selected box info tracking here?
@@ -194,8 +196,8 @@ class Annotation:
 		scene_widget.set_on_mouse(self.mouse_event_handler)
 
 		# sets up keyboard event handling
-		#key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
-		#scene_widget.set_on_key(key_partial)
+		key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
+		scene_widget.set_on_key(key_partial)
 
 
 	# Intermediate helper function that allows a user to select an annotation type from a dropdown list
@@ -512,6 +514,7 @@ class Annotation:
 			print("Scale Y" + value)
 		else:
 			print("Scale Z" + value)
+	
 	#general cube_mesh function to create cube mesh from bounding box information
 	#positions cube mesh at center of bounding box allowing the boxes to be selectable
 	def add_volume(self, box):
@@ -585,11 +588,14 @@ class Annotation:
 		file_dialog.set_on_done(self.save_changes_to_json)
 		self.cw.show_dialog(file_dialog)
 
+	# basically just restarts the program in order to exit
+	def exit_annotation_mode(self):
+		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
+		Window(sys.argv[2])
+		self.point_cloud.close()
+		self.cw.close()
+
 	# getters and setters below
 	def getCw(self):
 		return self.cw
-		
-	# need to discuss this one	
-	def currentBox(self):
-		return 0
 
