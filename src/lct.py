@@ -9,6 +9,8 @@ import matplotlib.colors
 import matplotlib.pyplot as plt
 from PIL import Image
 import sys
+import functools
+import random
 import numpy as np
 import open3d.visualization.gui as gui
 from PIL import Image
@@ -24,7 +26,11 @@ from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibili
 from utils import geometry_utils
 from utils import testing
 from operator import itemgetter
+import annotation_editing as edit
 import platform
+
+# local import
+import annotation_editing as edit
 
 OS_STRING = platform.system()
 ORIGIN = 0
@@ -35,7 +41,7 @@ CONFIDENCE = 4
 COLOR = 5
 
 #Taken from http://phrogz.net/tmp/24colors.html
-colorlist = [(255,0,0), (255,255,0), (0,234,255), (170,0,255), (255,127,0), (191,255,0), (0,149,255), (255,0,170), (255,212,0), (106,255,0), (0,64,255), (185,237,224), (143,35,35), (35,98,143), (107,35,143), (79,143,35)]
+colorlist = [(255,0,0), (255,255,0), (0,234,255), (170,0,255), (255,127,0), (191,255,0), (0,149,255), (255,0,170), (255,212,0), (106,255,0), (0,64,255), (185,237,224), (143,35,35), (35,98,143), (107,35,143), (79,143,35), (140, 102, 37), (10, 104, 22), (243, 177, 250)]
 # Parse CLI args and validate input
 def parse_options():
     """ This parses the CLI arguments and validates the arguments
@@ -68,7 +74,6 @@ def parse_options():
 class Window:
     MENU_IMPORT = 1
     def __init__(self, lct_dir):
-        
         np.set_printoptions(precision=15)
 
         # Create the objects for the 3 windows that appear when running the application
@@ -86,7 +91,16 @@ class Window:
         self.highlight_faults = False
         self.show_false_positive = False
         self.show_incorrect_annotations = False
+        self.show_gt = False
         self.boxes_to_render = []
+        #the below 5 variables involved in selecting and adjusting annotations
+        self.boxes_in_scene = []
+        self.box_indices = []
+        self.volumes_rendered = []
+        self.box_selected = None
+        self.previous_index = -1
+        self.box_count = 0
+        self.coord_frame = "coord_frame"
         self.show_score = False
         self.label_list = []
         # These three values represent the current LiDAR sensors, RGB sensors, and annotations being displayed
@@ -113,7 +127,8 @@ class Window:
 
         self.frame_num = 0
         # dictionary that stores the imported JSON file that respresents the annotations in the current frame
-        self.boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+        self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+        self.boxes = json.load(open(self.path_string))
         # num of frames available to display
         frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
         self.num_frames = len(frames_available)
@@ -140,7 +155,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.MaterialRecord()
+        self.mat = rendering.Material()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -182,12 +197,12 @@ class Window:
 
 
         # Set up checkboxes for selecting predicted annotations
-        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "pred_bounding"))]
+        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
         self.pred_frames = len(frames_available) - 1
         self.pred_check_horiz = []
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
-            boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(i), "boxes.json")))
+            boxes = json.load(open(os.path.join(self.lct_path,"bounding", str(i), "boxes.json")))
             for box in boxes['boxes']:
                 if box['annotation'] not in self.pred_color_map:
                     self.all_pred_annotations.append(box['annotation'])
@@ -206,7 +221,7 @@ class Window:
                     horiz.add_child(gui.Label("Count: 0"))
                     self.pred_check_horiz.append(horiz)
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
 
         # Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
@@ -270,7 +285,8 @@ class Window:
         toggle_highlight = gui.Checkbox("Show Unmatched GT Annotations")
         toggle_highlight.set_on_checked(self.toggle_highlights)
         toggle_comparison.set_on_checked(self.toggle_box_comparison)
-
+        toggle_show_gt = gui.Checkbox("Show GT Boxes")
+        toggle_show_gt.set_on_checked(self.toggle_gt)
         toggle_false_positive = gui.Checkbox("Show False Positives")
         toggle_false_positive.set_on_checked(self.toggle_false_positive)
 
@@ -305,11 +321,14 @@ class Window:
 
         tools_menu = gui.Menu()
         tools_menu.add_item("Scan For Errors",3)
-    
-
+        
+        # Newly added Add/Edit menu
+        tools_menu.add_item("Add/Edit Annotations",4)
+    	
         menu = gui.Menu()
         menu.add_menu("File", file_menu)
         menu.add_menu("Tools", tools_menu)
+        
         gui.Application.instance.menubar = menu
 
 
@@ -324,6 +343,7 @@ class Window:
 
         #self.anno_control.add_child(bounding_toggle_layout)
         self.anno_control.add_child(confidence_select_layout)
+        self.anno_control.add_child(toggle_show_gt)
         self.anno_control.add_child(toggle_highlight)
         self.anno_control.add_child(toggle_false_positive)
         self.anno_control.add_child(toggle_incorrect_annotations)
@@ -353,18 +373,23 @@ class Window:
         cw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
-
+        cw.set_on_menu_item_activated(4, self.on_annotation_start)
+	
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         iw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         iw.set_on_menu_item_activated(2, self.on_menu_quit)
-        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        # Originally read 'cw.set_on_menu...', I think it's a bug?
+        iw.set_on_menu_item_activated(3, self.on_error_scan)
+        iw.set_on_menu_item_activated(4, self.on_annotation_start)
 
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
         pw.set_on_menu_item_activated(1, self.on_menu_export_lidar)
         pw.set_on_menu_item_activated(2, self.on_menu_quit)
-        cw.set_on_menu_item_activated(3, self.on_error_scan)
+        # Originally read 'cw.set_on_menu...', I think it's a bug?
+        pw.set_on_menu_item_activated(3, self.on_error_scan)
+        pw.set_on_menu_item_activated(4, self.on_annotation_start)
     
 
         # Call update function to draw all initial data
@@ -379,7 +404,7 @@ class Window:
         eye[1] = self.frame_extrinsic['translation'][1]
         eye[2] = 150.0
         self.widget3d.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
-
+        self.pointcloud_window.post_redraw()
     def update_image(self):
         """Fetches new image from LVT Directory, and draws it onto a plt figure
            Uses nuScenes API to project 3D bounding boxes onto that plt figure
@@ -454,6 +479,7 @@ class Window:
 
         #Array that will hold list of boxes that will eventually be rendered
         self.boxes_to_render = []
+
         #
         self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
         #Update the counters for the gt boxes
@@ -470,7 +496,7 @@ class Window:
             count_widget.text = "Count: " + str(count_num)
         
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
             #Update the counters for predicted boxes
             for horiz_widget in self.pred_check_horiz:
                 children = horiz_widget.get_children()
@@ -487,12 +513,16 @@ class Window:
 
         #If highlight_faults is False, then we just filter boxes
         if self.highlight_faults is False and self.show_false_positive is False and self.show_incorrect_annotations is False:
-            #Add GT Boxes we should render
-            for box in self.boxes['boxes']:
-                if ((len(self.filter_arr) == 0 and len(self.pred_filter_arr) == 0) or box['annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
-                    bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]]
-                    if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
-                        self.boxes_to_render.append(bounding_box)
+            #If checked, add GT Boxes we should render
+            if self.show_gt is True:
+                for box in self.boxes['boxes']:
+                    if ((len(self.filter_arr) == 0 and len(self.pred_filter_arr) == 0) or box[
+                        'annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
+                        bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+                                        box['confidence'], self.color_map[box['annotation']]]
+                        if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
+                            self.boxes_to_render.append(bounding_box)
+
             #Add Pred Boxes we should render
             if self.pred_frames > 0:
                 for box in self.pred_boxes['boxes']:
@@ -567,6 +597,8 @@ class Window:
                 None
                 """
         self.widget3d.scene.clear_geometry()
+        self.boxes_in_scene = []
+        self.box_indices = []
         # Add Pointcloud
         temp_points = np.empty((0,3))
         for label in self.label_list:
@@ -588,9 +620,10 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.MaterialRecord()
+        mat = rendering.Material()
         mat.shader = "unlitLine"
         mat.line_width = .25
+
         for box in self.boxes_to_render:
             size = [0,0,0]
             # Open3D wants sizes in L,W,H
@@ -604,6 +637,8 @@ class Window:
             hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
             bounding_box.color = matplotlib.colors.to_rgb(hex)
 
+            self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
+            self.boxes_in_scene.append(bounding_box)
             if box[CONFIDENCE] < 100 and self.show_score:
                 label = self.widget3d.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
                 label.color = gui.Color(1.0,0.0,0.0)
@@ -803,6 +838,14 @@ class Window:
                 self.compare_bounding = False
             self.update()
 
+    def toggle_gt(self, checked):
+        if self.pred_frames > 0:
+            if checked:
+                self.show_gt = True
+            else:
+                self.show_gt = False
+            self.update()
+
     def toggle_highlights(self, checked):
         if self.pred_frames > 0:
             if checked:
@@ -926,7 +969,7 @@ class Window:
         for j in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
             try:
-                pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
+                pred_boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
             except FileNotFoundError:
                 layout.add_child(gui.Label("Error reading predicted data"))
                 window.add_child(layout)
@@ -1016,7 +1059,23 @@ class Window:
             message = gui.Label("No Errors Found")
             layout.add_child(message)
         window.add_child(layout)
-      
+
+    # controls what editing mode should be able to do
+    
+    # TODO:
+    # Add button to control window, onclick disables the current mouse functionality (ie dragging window), instead next click = new bounding box
+    # On exiting editing mode, restarts the application/resets it to the 3 window view 
+    # Add button to exit editing mode
+    # Saving functionality (haven't thought that far ahead)
+    def on_annotation_start(self):
+    	
+    	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
+    	self.controls.close()
+    	self.image_window.close()
+    	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
+                                            self.boxes_to_render, self.boxes_in_scene, self.box_indices,
+                                            self.all_pred_annotations, self.path_string, self.color_map, self.pred_color_map)
+
 
 
     def close_dialog(self):
@@ -1035,7 +1094,7 @@ class Window:
         self.update_bounding()
         self.update_image()
         self.update_pointcloud()
-
+	    
     def get_cams_and_pointclouds(self, path):
         """This gets the names of the cameras and lidar sensors
             Args:
@@ -1057,7 +1116,6 @@ class Window:
             lidar_sensors.append(lidar_name)
 
         return (camera_sensors, lidar_sensors)
-
 
 if __name__ == "__main__":
     lct_dir = parse_options()
