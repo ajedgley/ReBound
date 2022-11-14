@@ -490,7 +490,7 @@ class Annotation:
 		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 		result = Quaternion(matrix=box_to_rotate.R)
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, box_scale, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101)
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, box_scale, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101, {})
 		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
@@ -664,7 +664,7 @@ class Annotation:
 			"size": size,
 			"rotation": rotation,
 			"annotation": label,
-			"confidence": confidence
+			"confidence": confidence,
 			"data": data
 		}
 
