@@ -483,6 +483,15 @@ class Annotation:
 			box_rotate_x, box_rotate_y, box_rotate_z,
 			box_scale[0], box_scale[1], box_scale[2]
 		]
+		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
+		#to the boxes.json file
+		box_to_rotate = o3d.geometry.OrientedBoundingBox(box_object)
+		reverse_extrinsic = Quaternion(self.frame_extrinsic['rotation']).inverse
+		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
+		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+		result = Quaternion(matrix=box_to_rotate.R)
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, box_scale, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101)
+		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
 	#redirects on_value_changed events to appropriate box transformation function
@@ -650,12 +659,8 @@ class Annotation:
 	#Extracts the current data for a selected bounding box
 	#returns it as a json object for use in save and export functions
 	def create_box_metadata(self, origin, size, rotation, label, confidence):
-		untranslated_origin = ((origin[0]-self.frame_extrinsic['translation'][0]),
-							   (origin[1]-self.frame_extrinsic['translation'][1]),
-							   (origin[2]-self.frame_extrinsic['translation'][2]))
-
 		return {
-			"origin": untranslated_origin,
+			"origin": origin,
 			"size": size,
 			"rotation": rotation,
 			"annotation": label,
