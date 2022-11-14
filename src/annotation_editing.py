@@ -53,19 +53,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		#transparent volume material
-		self.transparent_mat = rendering.Material() #invisible material for box volumes
+		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.Material()
+		self.line_mat_highlight = rendering.MaterialRecord()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.Material()
+		self.line_mat = rendering.MaterialRecord()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.Material()
+		self.coord_frame_mat = rendering.MaterialRecord()
 		self.coord_frame_mat.shader = "defaultLit"
 
 		self.coord_frame = "coord_frame"
@@ -210,7 +209,7 @@ class Annotation:
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
-		scene_widget.set_on_mouse(self.mouse_event_handler)
+		self.scene_widget.set_on_mouse(self.mouse_event_handler)
 
 		# sets up keyboard event handling
 		key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
@@ -252,7 +251,7 @@ class Annotation:
 	def exit_annotation_mode(self, widget):
 		# os.execl(sys.executable, os.path.abspath(__file__), *sys.argv), this doesn't work but maybe it's an idea
 		print("TODO")
-		widget.set_on_mouse(self.enable_mouse)
+		#widget.set_on_mouse(self.enable_mouse)
 
 	# onclick, places down a bounding box on the cursor, then reenables mouse functionality
 	def place_bounding_box(self, annotation):
@@ -260,9 +259,9 @@ class Annotation:
 		qtr = Quaternion([random.uniform(-0.1,1), random.uniform(-0.1,1), random.uniform(-0.1,1), random.uniform(0,1)]) #Randomized rotation of box
 		origin = (self.scene_widget.center_of_rotation[0], self.scene_widget.center_of_rotation[1], self.get_depth_average())
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
-		bbox_params = [origin, size, qtr] #create_volume uses box meta data to create mesh
+		bbox_params = [origin, size, qtr.rotation] #create_volume uses box meta data to create mesh
 
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -389,7 +388,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.Material()
+			prev_mat = rendering.MaterialRecord()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -400,9 +399,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.Material()
+		frame_mat = rendering.MaterialRecord()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -415,7 +414,7 @@ class Annotation:
 		frame_to_add = o3d.geometry.TriangleMesh.create_coordinate_frame()
 		scene.scene.add_geometry("coord_frame", frame_to_add, coord_frame_mat, False)
 		for box in boxes:
-			volume_to_add = self.add_volume(box)
+			volume_to_add = self.add_volume((box[0], box[1], Quaternion(box[2]).rotation_matrix))
 			volume_to_add = volume_to_add.rotate(Quaternion(extrinsics['rotation']).rotation_matrix, [0, 0, 0])
 			volume_to_add = volume_to_add.translate(np.array(extrinsics['translation']))
 			cube_id = "volume_" + str(self.box_count)
@@ -442,7 +441,6 @@ class Annotation:
 		current_box = self.previous_index
 		box_object = self.boxes_in_scene[current_box]
 		scaled_color = tuple(255*x for x in box_object.color)
-			
 		if scaled_color in self.color_map.values():
 			self.annotation_type.text = "Ground Truth"
 			selected = list(self.color_map.keys())[list(self.color_map.values()).index(scaled_color)]
@@ -492,6 +490,8 @@ class Annotation:
 
 	def property_change_handler(self, value, prop, axis):
 		value_as_float = float(value)
+		if math.isnan(value_as_float): #handles not a number inputs
+			value_as_float = 0.0
 		if prop == "trans":
 			self.translate_box(axis, value_as_float)
 		elif prop == "rot":
@@ -514,6 +514,7 @@ class Annotation:
 		self.scene_widget.scene.remove_geometry(box_name)
 		self.scene_widget.scene.remove_geometry(volume_name)
 		self.scene_widget.scene.remove_geometry("coord_frame")
+
 		if axis == "x":
 			diff = value - self.box_props_selected[0]
 			box_to_drag.translate([diff, 0, 0])
@@ -523,7 +524,8 @@ class Annotation:
 			diff = value - self.box_props_selected[1]
 			box_to_drag.translate([0, diff, 0])
 			volume_to_drag.translate([0, diff, 0])
-		else:
+
+		else: #the axis is z no other inputs are able to be entered
 			diff = value - self.box_props_selected[2]
 			box_to_drag.translate([0, 0, diff])
 			volume_to_drag.translate([0, 0, diff])
@@ -538,20 +540,70 @@ class Annotation:
 
 	#Need to add handler functions to rotate and scale boxes on field change
 	def rotate_box(self, axis, value):
+		current_box = self.previous_index
+		box_to_drag = self.boxes_in_scene[current_box]
+		box_name = self.box_indices[current_box]
+		volume_to_drag = self.volumes_in_scene[current_box]
+		volume_name = self.volume_indices[current_box]
+
+		self.scene_widget.scene.remove_geometry(box_name)
+		self.scene_widget.scene.remove_geometry(volume_name)
+
 		if axis == "x":
-			print("Rotate X" + value)
+			diff = value - math.degrees(self.box_props_selected[3])
+			rotation = Quaternion(axis=[1, 0, 0], degrees=diff).rotation_matrix
+			box_to_drag.rotate(rotation)
+			volume_to_drag.rotate(rotation)
 		elif axis == "y":
-			print("Rotate Y" + value)
+			diff = value - math.degrees(self.box_props_selected[4])
+			rotation = Quaternion(axis=[0, 1, 0], degrees=diff).rotation_matrix
+			box_to_drag.rotate(rotation)
+			volume_to_drag.rotate(rotation)
 		else:
-			print("Rotate Z" + value)
+			diff = value - math.degrees(self.box_props_selected[5])
+			rotation = Quaternion(axis=[0, 0, 1], degrees=diff).rotation_matrix
+			box_to_drag.rotate(rotation)
+			volume_to_drag.rotate(rotation)
+
+		self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
+		self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
+		self.update_props()
+		self.point_cloud.post_redraw()
 	def scale_box(self, axis, value):
 		print("SCALE")
+		current_box = self.previous_index
+		box_to_drag = self.boxes_in_scene[current_box]
+		box_center = box_to_drag.center
+		box_name = self.box_indices[current_box]
+		volume_to_drag = self.volumes_in_scene[current_box]
+		volume_name = self.volume_indices[current_box]
+
+		self.scene_widget.scene.remove_geometry(box_name)
+		self.scene_widget.scene.remove_geometry(volume_name)
+		trans = [self.box_props_selected[0], self.box_props_selected[1], self.box_props_selected[2]]
+		scale = []
+		qrt = box_to_drag.R
 		if axis == "x":
-			print("Scale X" + value)
+			scale = [value, self.box_props_selected[7], self.box_props_selected[8]]
+			box_to_drag.extent = scale
+			volume_to_drag = self.add_volume([trans, (scale[1], scale[0], scale[2]), qrt])
+
 		elif axis == "y":
-			print("Scale Y" + value)
+
+			scale = [self.box_props_selected[6], value, self.box_props_selected[8]]
+			box_to_drag.extent = scale
+			volume_to_drag = self.add_volume([trans, (scale[1], scale[0], scale[2]), qrt])
 		else:
-			print("Scale Z" + value)
+			scale = [self.box_props_selected[6], self.box_props_selected[7], value]
+			box_to_drag.extent = scale
+			volume_to_drag = self.add_volume([trans, (scale[1], scale[0], scale[2]), qrt])
+
+		volume_to_drag.compute_vertex_normals()
+		self.volumes_in_scene[self.previous_index] = volume_to_drag
+		self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
+		self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
+		self.update_props()
+		self.point_cloud.post_redraw()
 	
 	#general cube_mesh function to create cube mesh from bounding box information
 	#positions cube mesh at center of bounding box allowing the boxes to be selectable
@@ -563,7 +615,7 @@ class Annotation:
 
 		cube_to_add = o3d.geometry.TriangleMesh.create_box(size[0], size[1], size[2], False, False)
 		cube_to_add = cube_to_add.translate(np.array([0, 0, 0]), False) #false translates the mesh center to origin
-		cube_to_add = cube_to_add.rotate(Quaternion(box[ROTATION]).rotation_matrix, [0, 0, 0])
+		cube_to_add = cube_to_add.rotate(box[ROTATION], [0, 0, 0])
 		cube_to_add = cube_to_add.translate(box[ORIGIN])
 
 		return cube_to_add
