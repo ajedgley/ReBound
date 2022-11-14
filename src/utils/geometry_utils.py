@@ -136,7 +136,6 @@ def compute_interior_points(box, point_cloud):
     uvw_corners = np.matmul(uvw, np.transpose(three_corners))
     uvw_points = np.matmul(np.asarray(f_points), np.transpose(uvw))
 
-
     # count the points
     count = 0
     for p in uvw_points:
