@@ -50,18 +50,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight = rendering.Material()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.MaterialRecord()
+		self.line_mat = rendering.Material()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat = rendering.Material()
 		self.coord_frame_mat.shader = "defaultLit"
 
 		self.coord_frame = "coord_frame"
@@ -228,7 +228,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -244,7 +244,7 @@ class Annotation:
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		box_object_data = self.create_box_metadata(origin, size, qtr.elements, "human.pedestrian.adult", 101)
+		box_object_data = self.create_box_metadata(origin, size, qtr.elements, "human.pedestrian.adult", 101, {})
 		self.temp_boxes['boxes'].append(box_object_data)
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
@@ -362,7 +362,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.MaterialRecord()
+			prev_mat = rendering.Material()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -373,9 +373,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.MaterialRecord()
+		frame_mat = rendering.Material()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -658,13 +658,14 @@ class Annotation:
 
 	#Extracts the current data for a selected bounding box
 	#returns it as a json object for use in save and export functions
-	def create_box_metadata(self, origin, size, rotation, label, confidence):
+	def create_box_metadata(self, origin, size, rotation, label, confidence, data):
 		return {
 			"origin": origin,
 			"size": size,
 			"rotation": rotation,
 			"annotation": label,
 			"confidence": confidence
+			"data": data
 		}
 
 	#toggles horizontal or vertical drag
