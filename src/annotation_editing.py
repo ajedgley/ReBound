@@ -31,9 +31,6 @@ COLOR = 5
 class Annotation:
 	# returns created window with all its buttons and whatnot
 	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render, boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map):
-		print(*sys.argv)
-		print(os.getcwd())
-	
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
@@ -41,8 +38,8 @@ class Annotation:
 		self.boxes_to_render = boxes_to_render 		#list of box metadata in scene
 		self.box_indices = box_indices 				#name references for bounding boxes in scene
 		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
-		self.volume_indices = [] 					#name references for cube volumes in scene
-		self.volumes_in_scene = [] 					#current cube volume objects in scene
+		self.volume_indices = [] 					#name references for clickable cube volumes in scene
+		self.volumes_in_scene = [] 					#current clickable cube volume objects in scene
 		self.color_map = color_map
 		self.pred_color_map = pred_color_map
 		
@@ -53,18 +50,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight = rendering.Material()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.MaterialRecord()
+		self.line_mat = rendering.Material()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat = rendering.Material()
 		self.coord_frame_mat.shader = "defaultLit"
 
 		self.coord_frame = "coord_frame"
@@ -100,8 +97,9 @@ class Annotation:
 		trans_collapse = gui.CollapsableVert("Position", 0, margin)
 		rot_collapse = gui.CollapsableVert("Rotation", 0, margin)
 		scale_collapse = gui.CollapsableVert("Scale", 0, margin)
-		self.annotation_type = gui.Label("                                    ")
+		self.annotation_type = gui.Label("                             ")
 		self.annotation_class = gui.Combobox()
+		self.annotation_class.set_on_selection_changed(self.label_change_handler)
 		for annotation in self.all_pred_annotations:
 			self.annotation_class.add_item(annotation)
 		self.trans_x = gui.TextEdit()
@@ -188,9 +186,9 @@ class Annotation:
 		
 		# deletes bounding box, should only be enabled if a bounding box is selected
 		delete_annotation_horiz = gui.Horiz()
-		delete_annotation_button = gui.Button("Delete Annotation")
-		delete_annotation_button.set_on_clicked(self.delete_annotation)
-		delete_annotation_horiz.add_child(delete_annotation_button)
+		self.delete_annotation_button = gui.Button("Delete Annotation")
+		self.delete_annotation_button.set_on_clicked(self.delete_annotation)
+		delete_annotation_horiz.add_child(self.delete_annotation_button)
 
 		# empty horiz, just cuz i think exit_annotation looks better at the bottom
 		empty_horiz = gui.Horiz()
@@ -205,7 +203,7 @@ class Annotation:
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
-		
+		self.update_props()
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
@@ -219,7 +217,6 @@ class Annotation:
 	# Intermediate helper function that allows a user to select an annotation type from a dropdown list
 	# Picks both the bounding box color and the attached annotation type
 	def add_bounding_box(self):
-
 		dialog = gui.Dialog("Select Annotation")
 		em = self.cw.theme.font_size
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
@@ -241,17 +238,6 @@ class Annotation:
 		layout.add_child(button_layout)
 		dialog.add_child(layout)
 		self.cw.show_dialog(dialog)
-		
-	# function should:
-	# close the exiting control panel
-	# idk, restore the state as if the program just reopened
-	# potential ideas:
-	# -just restart the program (hey, it'll probably work)
-	# -close control window, reopen any previously closed windows, and run update (maybe update done in lct)
-	def exit_annotation_mode(self, widget):
-		# os.execl(sys.executable, os.path.abspath(__file__), *sys.argv), this doesn't work but maybe it's an idea
-		print("TODO")
-		#widget.set_on_mouse(self.enable_mouse)
 
 	# onclick, places down a bounding box on the cursor, then reenables mouse functionality
 	def place_bounding_box(self, annotation):
@@ -261,7 +247,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation] #create_volume uses box meta data to create mesh
 
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -388,7 +374,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.MaterialRecord()
+			prev_mat = rendering.Material()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -399,9 +385,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.MaterialRecord()
+		frame_mat = rendering.Material()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -438,8 +424,31 @@ class Annotation:
 	#when something changes with a box, that means it is currently selected
 	#update the properties in the property window
 	def update_props(self):
+		# Enables or disables boxes, depending on whether box is currently selected
+		boxes = [self.annotation_class, self.trans_x, self.trans_y, self.trans_z, self.rot_x, self.rot_y, self.rot_z, self.scale_x, self.scale_y,
+			self.scale_z, self.delete_annotation_button]
+		enabled = False
+		if self.box_selected != None:
+			enabled = True
+			
+		for i in boxes:
+			i.enabled = enabled
+		
+		if not enabled:
+			return -1
+			
+		annot_type = gui.Horiz()
+		annot_type.add_child(gui.Label("Type:"))
+		annot_type.add_child(self.annotation_type)
+		annot_class = gui.Horiz()
+		annot_class.add_child(gui.Label("Class:"))
+		annot_class.add_child(self.annotation_class)
+		annot_vert = gui.Vert()
+		annot_vert.add_child(annot_type)
+		annot_vert.add_child(annot_class)
 		current_box = self.previous_index
 		box_object = self.boxes_in_scene[current_box]
+		
 		scaled_color = tuple(255*x for x in box_object.color)
 		if scaled_color in self.color_map.values():
 			self.annotation_type.text = "Ground Truth"
@@ -498,13 +507,24 @@ class Annotation:
 			self.rotate_box(axis, value_as_float)
 		elif prop == "scale":
 			self.scale_box(axis, value_as_float)
-		else:
-			print("Changed Label!")
 
+	# on label change, changes temp_boxes value and color of current box
+	def label_change_handler(self, label, pos):
+		self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
+
+		# changes color of box based on label selection
+		new_color = None
+		if label in self.color_map.keys():
+			new_color = self.color_map[label]
+		elif label in self.pred_color_map():
+			new_color = self.color_map[label]
+		new_color = tuple(x/255 for x in new_color)
+		self.boxes_in_scene[self.previous_index].color = new_color
+		
+		self.point_cloud.post_redraw()
 
 	#used by property fields to move box along specified axis to new position -> value
 	def translate_box(self, axis, value):
-		print("TRANSLATE")
 		current_box = self.previous_index
 		box_to_drag = self.boxes_in_scene[current_box]
 		box_name = self.box_indices[current_box]
@@ -570,7 +590,6 @@ class Annotation:
 		self.update_props()
 		self.point_cloud.post_redraw()
 	def scale_box(self, axis, value):
-		print("SCALE")
 		current_box = self.previous_index
 		box_to_drag = self.boxes_in_scene[current_box]
 		box_center = box_to_drag.center
@@ -662,6 +681,7 @@ class Annotation:
 			
 			self.previous_index = -1
 			self.box_selected = None
+			self.update_props()
 
 	
 	# overwrites currently open file with temp_boxes
