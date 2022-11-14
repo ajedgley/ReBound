@@ -91,6 +91,7 @@ class Window:
         self.highlight_faults = False
         self.show_false_positive = False
         self.show_incorrect_annotations = False
+        self.show_gt = False
         self.boxes_to_render = []
         #the below 5 variables involved in selecting and adjusting annotations
         self.boxes_in_scene = []
@@ -154,7 +155,7 @@ class Window:
         self.widget3d = gui.SceneWidget()
         self.widget3d.scene = rendering.Open3DScene(pw.renderer)
         self.widget3d.scene.set_background([0,0,0,255])
-        self.mat = rendering.Material()
+        self.mat = rendering.MaterialRecord()
         self.mat.shader = "defaultUnlit"
         self.mat.point_size = 2
         #self.mat.base_color = [255,255,255,255]
@@ -284,7 +285,8 @@ class Window:
         toggle_highlight = gui.Checkbox("Show Unmatched GT Annotations")
         toggle_highlight.set_on_checked(self.toggle_highlights)
         toggle_comparison.set_on_checked(self.toggle_box_comparison)
-
+        toggle_show_gt = gui.Checkbox("Show GT Boxes")
+        toggle_show_gt.set_on_checked(self.toggle_gt)
         toggle_false_positive = gui.Checkbox("Show False Positives")
         toggle_false_positive.set_on_checked(self.toggle_false_positive)
 
@@ -341,6 +343,7 @@ class Window:
 
         #self.anno_control.add_child(bounding_toggle_layout)
         self.anno_control.add_child(confidence_select_layout)
+        self.anno_control.add_child(toggle_show_gt)
         self.anno_control.add_child(toggle_highlight)
         self.anno_control.add_child(toggle_false_positive)
         self.anno_control.add_child(toggle_incorrect_annotations)
@@ -510,12 +513,16 @@ class Window:
 
         #If highlight_faults is False, then we just filter boxes
         if self.highlight_faults is False and self.show_false_positive is False and self.show_incorrect_annotations is False:
-            #Add GT Boxes we should render
-            for box in self.boxes['boxes']:
-                if ((len(self.filter_arr) == 0 and len(self.pred_filter_arr) == 0) or box['annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
-                    bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.color_map[box['annotation']]]
-                    if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
-                        self.boxes_to_render.append(bounding_box)
+            #If checked, add GT Boxes we should render
+            if self.show_gt is True:
+                for box in self.boxes['boxes']:
+                    if ((len(self.filter_arr) == 0 and len(self.pred_filter_arr) == 0) or box[
+                        'annotation'] in self.filter_arr) and box['confidence'] >= self.min_confidence:
+                        bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+                                        box['confidence'], self.color_map[box['annotation']]]
+                        if len(self.filter_arr) == 0 or bounding_box[ANNOTATION] in self.filter_arr:
+                            self.boxes_to_render.append(bounding_box)
+
             #Add Pred Boxes we should render
             if self.pred_frames > 0:
                 for box in self.pred_boxes['boxes']:
@@ -613,7 +620,7 @@ class Window:
         self.widget3d.scene.add_geometry("Point Cloud", self.pointcloud, self.mat)
         self.widget3d.scene.show_axes(True)
         i = 0
-        mat = rendering.Material()
+        mat = rendering.MaterialRecord()
         mat.shader = "unlitLine"
         mat.line_width = .25
 
@@ -829,6 +836,14 @@ class Window:
                 else:
                     self.box_data_name = ["pred_bounding"]
                 self.compare_bounding = False
+            self.update()
+
+    def toggle_gt(self, checked):
+        if self.pred_frames > 0:
+            if checked:
+                self.show_gt = True
+            else:
+                self.show_gt = False
             self.update()
 
     def toggle_highlights(self, checked):
