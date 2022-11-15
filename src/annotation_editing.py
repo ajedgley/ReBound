@@ -659,6 +659,13 @@ class Annotation:
 	#Extracts the current data for a selected bounding box
 	#returns it as a json object for use in save and export functions
 	def create_box_metadata(self, origin, size, rotation, label, confidence, data):
+		if isinstance(origin, np.ndarray):
+			origin = origin.tolist()
+		if isinstance(size, np.ndarray):
+			size = size.tolist()
+		if isinstance(rotation, np.ndarray):
+			rotation = rotation.tolist()
+		
 		return {
 			"origin": origin,
 			"size": size,
