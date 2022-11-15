@@ -83,7 +83,9 @@ def extract_frame(frame_num, input_path):
 
         # Update annotation
         ann_token = (bounding_box["data"]["token"] if bounding_box["data"] else token_hex(16))
-        sample_token = samples[timestamps[frame_num]]
+        sample_token = timestamps[frame_num]
+        # print(timestamps[frame_num])
+        # print(sample_token)
         instance_token = (bounding_box["data"]["instance_token"] if bounding_box["data"] else token_hex(16))
         data = {}
         data["token"] = ann_token

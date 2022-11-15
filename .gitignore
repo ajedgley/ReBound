@@ -4,3 +4,4 @@ Prototype/v1.0-mini.tgz
 nicks_script.py
 Output/
 src/utils/__pycache__/
+src/__pycache__
