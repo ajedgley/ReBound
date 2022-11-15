@@ -82,9 +82,9 @@ def extract_frame(frame_num, output_path):
         box.translate(np.array(ego["translation"]))
 
         # Update annotation
-        ann_token = (bounding_box["data"]["token"] if bounding_box["data"]["token"] != "" else token_hex(16))
+        ann_token = (bounding_box["data"]["token"] if bounding_box["data"] else token_hex(16))
         sample_token = samples[timestamps[frame_num]]
-        instance_token = (bounding_box["data"]["instance_token"] if bounding_box["data"]["instance_token"] != "" else token_hex(16))
+        instance_token = (bounding_box["data"]["instance_token"] if bounding_box["data"] else token_hex(16))
         data = {}
         data["token"] = ann_token
         data["sample_token"] = sample_token
@@ -105,8 +105,7 @@ def extract_frame(frame_num, output_path):
             data["size"] = bounding_box["size"]
             data["rotation"] = box.orientation.q.tolist()
             # Calculating num_lidar_pts and num_radar_pts is expensive
-            data["num_lidar_pts"] = geometry_utils.compute_interior_points(box, pcd)
-            # See for details: https://forum.nuscenes.org/t/radar-points-counting/58
+            data["num_lidar_pts"] = geometry_utils.compute_interior_points(bounding_box, pcd)
             data["num_radar_pts"] = 0
         # Update this later
         data["prev"] = "" 
