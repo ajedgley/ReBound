@@ -50,18 +50,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.Material() #invisible material for box volumes
+		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.Material()
+		self.line_mat_highlight = rendering.MaterialRecord()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.Material()
+		self.line_mat = rendering.MaterialRecord()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.Material()
+		self.coord_frame_mat = rendering.MaterialRecord()
 		self.coord_frame_mat.shader = "defaultLit"
 
 		self.coord_frame = "coord_frame"
@@ -228,7 +228,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -362,7 +362,7 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.Material()
+			prev_mat = rendering.MaterialRecord()
 			prev_mat.shader = "unlitLine"
 			prev_mat.line_width = 0.25 #return line_width to normal
 			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
@@ -373,9 +373,9 @@ class Annotation:
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
-		frame_mat = rendering.Material()
+		frame_mat = rendering.MaterialRecord()
 		frame_mat.shader = "defaultLit"
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
@@ -490,7 +490,8 @@ class Annotation:
 		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 		result = Quaternion(matrix=box_to_rotate.R)
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, box_scale, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101, {})
+		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101, {})
 		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
