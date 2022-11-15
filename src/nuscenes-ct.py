@@ -340,13 +340,15 @@ def convert_dataset(output_path, scene_name, pred_data):
         extract_bounding(nusc, sample, frame_num, output_path)
         extract_rgb(nusc, sample, frame_num, output_path)
         extract_lidar(nusc, sample, frame_num, output_path)
-        timestamps.append(sample['timestamp'])
+        timestamps.append(sample['token'])
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
         dataformat_utils.print_progress_bar(frame_num, frame_count)
     with open(output_path + "/timestamps.json","w") as f:
         json.dump({"timestamps":timestamps}, f, indent=0)
 
+    # Store metadata
+    dataformat_utils.add_metadata(output_path, 'nuScenes', ['timestamps.json'])
 
 # Driver for nuscenes conversion tool
 if __name__ == "__main__":

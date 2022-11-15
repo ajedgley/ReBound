@@ -7,6 +7,7 @@ General use geometry utils
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import math
+from pyquaternion import Quaternion
 
 ORIGIN = 0
 SIZE = 1
@@ -145,7 +146,3 @@ def compute_interior_points(box, point_cloud):
         if conditions_met == 3:
             count += 1
     return count
-
-
-
-

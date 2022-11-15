@@ -22,7 +22,6 @@ camera_list = ["ring_front_center",
                 "stereo_front_left",
                 "stereo_front_right"]
 
-# Command line parsing
 def parse_options():
     ''' Read in user command line input to get directory paths which will be used for input and output.
     Args:
@@ -57,7 +56,7 @@ def parse_options():
         else:
             sys.exit(2)
 
-    return (input_path, output_path, scene_names)
+    return (input_path, output_path, scene_names)        
 
 def extract_rgb(frame_num, timestamp, output_path, input_path):
     ''' Extracts the RGB data from an argoverse frame and puts it in the lct file system
@@ -107,8 +106,8 @@ def extract_ego(frame_num, timestamp, output_path, input_path):
     egovehicle = pd.read_feather(input_path+"city_SE3_egovehicle.feather")
     ego = egovehicle[egovehicle["timestamp_ns"] == int(timestamp)]
     # Get rotation and translation of egovehicle
-    rotation = ego[["qw","qx","qy","qz"]].values.tolist()
-    translation = ego[["tx_m","ty_m","tz_m"]].values.tolist()
+    rotation = ego[["qw","qx","qy","qz"]].values[0].tolist()
+    translation = ego[["tx_m","ty_m","tz_m"]].values[0].tolist()
     dataformat_utils.create_ego_directory(output_path, frame_num, translation, rotation)
 
 def extract_bounding(annotations, frame_num, timestamp, output_path):
@@ -126,8 +125,10 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
     rotations = []
     annotation_names = []
     confidences = []
+    ids = []
+    interior_pts = []
 
-    # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
+    # Get annotation, rotation, confidence level, quaternion, center, diminensions, uuids, and interior points of each bounding box in frame
     annotations = annotations[annotations["timestamp_ns"] == int(timestamp)]
     for annotation in annotations.itertuples():
         origins.append([annotation.tx_m, annotation.ty_m, annotation.tz_m])
@@ -137,7 +138,9 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
         rotations.append(quat.q.tolist())
         # Confidence set to 100 by default for ground truth data
         confidences.append(100)
-    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+        ids.append(annotation.track_uuid)
+        interior_pts.append(annotation.num_interior_pts)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, data = {"id":ids, "interior_pts":interior_pts })
 
 # Main method for converting datasets
 def convert_dataset(input_path, output_path):
@@ -145,6 +148,9 @@ def convert_dataset(input_path, output_path):
     ext_df = pd.read_feather(input_path + "calibration/egovehicle_SE3_sensor.feather")
     int_df.set_index("sensor_name", inplace=True, drop=True)
     ext_df.set_index("sensor_name", inplace=True, drop=True)
+
+    # Store metadata
+    dataformat_utils.add_metadata(output_path, 'Argoverse', ['timestamps.csv'])
     
     # Extrinsic and intrinsic data for each camera
     for camera in camera_list:
@@ -185,6 +191,9 @@ def convert_dataset(input_path, output_path):
         extract_bounding(annotations, frame_num, timestamp, output_path)
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
+
+    # Store timestamps
+    pd.DataFrame(timestamps, columns=['timestamps']).to_csv(output_path + 'timestamps.csv')
 
 if __name__ == "__main__":
     (input_path, output_path, scene_names) = parse_options()
