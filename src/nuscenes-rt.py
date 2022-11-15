@@ -66,13 +66,13 @@ def parse_options():
 
     return (input_path, output_path, scene_names, pred_path, ver_name)
 
-def extract_frame(frame_num, output_path):
+def extract_frame(frame_num, input_path):
     # Necessary files from generic data format
-    with open(output_path + "/bounding/" + str(frame_num) + "/boxes.json") as f:
+    with open(input_path + "/bounding/" + str(frame_num) + "/boxes.json") as f:
             bounding = json.load(f)
-    with open(output_path + "/ego/" + str(frame_num) + ".json") as f:
+    with open(input_path + "/ego/" + str(frame_num) + ".json") as f:
             ego = json.load(f)
-    pcd = o3d.io.read_point_cloud(output_path + "pointcloud/LIDAR_TOP/" + str(frame_num) + ".pcd").points
+    pcd = o3d.io.read_point_cloud(input_path + "pointcloud/LIDAR_TOP/" + str(frame_num) + ".pcd").points
 
     for i in range(len(bounding["boxes"])):
         # Reverting bounding box
@@ -153,7 +153,7 @@ def revert_dataset(input_path, output_path):
     # Setup progress bar
     frame_num = 0
     frame_count = 0
-    for d in os.scandir(output_path + "bounding/"):
+    for d in os.scandir(input_path + "bounding/"):
         res = re.match(r"\d+",d.name)
         if d.is_dir() and res:
             frame_count += 1
@@ -161,18 +161,18 @@ def revert_dataset(input_path, output_path):
 
     # Iterate through each frame
     while frame_num < frame_count:
-        extract_frame(frame_num, output_path)
+        extract_frame(frame_num, input_path)
         frame_num += 1
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
     # TODO: Write updated json files to input
-    with open("/Users/joshualiu/CMSC435/revert/sample_annotation.json","w") as f:
+    with open(output_path + "/sample_annotation.json","w") as f:
         json.dump(list(new_annotation.values()), f, indent=0)
-    with open("/Users/joshualiu/CMSC435/revert/sample.json","w") as f:
+    with open(output_path + "/sample.json","w") as f:
         json.dump(list(samples.values()), f, indent=0)
-    with open("/Users/joshualiu/CMSC435/revert/category.json","w") as f:
+    with open(output_path + "/category.json","w") as f:
         json.dump(list(category.values()), f, indent=0)
-    with open("/Users/joshualiu/CMSC435/revert/instance.json","w") as f:
+    with open(output_path + "/instance.json","w") as f:
         json.dump(list(new_instance.values()), f, indent=0)
 
 if __name__ == "__main__":
@@ -185,28 +185,28 @@ if __name__ == "__main__":
     # Verify input path exists
     input_path += ("" if input_path[-1] == "/" else "/")
     output_path += ("" if output_path[-1] == "/" else "/")
-    if not os.path.exists(input_path + ver_name):
+    if not os.path.exists(input_path):
         sys.exit("Invalid input path. Please check paths entered and try again.")
-    if not os.path.exists(output_path):
+    if not os.path.exists(output_path + ver_name):
         sys.exit("Invalid output path. Please check paths entered and try again.")
 
     # Necessary files from original nuscenes to update annotations
-    with open(input_path + ver_name + "/sample_annotation.json") as f:
+    with open(output_path + ver_name + "/sample_annotation.json") as f:
         data = json.load(f)
         sample_annotations = {}
         for i in range(len(data)):
             sample_annotations[data[i]["token"]] = data[i]
-    with open(input_path + ver_name + "/sample.json") as f:
+    with open(output_path + ver_name + "/sample.json") as f:
         data = json.load(f)
         samples = {}
         for i in range(len(data)):
             samples[data[i]["token"]] = data[i]
-    with open(input_path + ver_name +  "/category.json") as f:
+    with open(output_path + ver_name +  "/category.json") as f:
         data = json.load(f)
         category = {}
         for i in range(len(data)):
             category[data[i]["name"]] = data[i]
-    with open(input_path + ver_name + "/instance.json") as f:
+    with open(output_path + ver_name + "/instance.json") as f:
         data = json.load(f)
         instance = {}
         for i in range(len(data)):
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     # If this was blank, then revert all scenes
     if len(scene_names) == 0:
         print("Converting All Scenes...")
-        for scene in os.scandir(output_path):
+        for scene in os.scandir(input_path):
             res = re.match(r"scene-\d{4}",scene.name)
             if not res:
                 continue
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 
     # Revert all the scenes
     for scene_name in scene_names:
-        with open(output_path + scene_name + "/timestamps.json") as f:
+        with open(input_path + scene_name + "/timestamps.json") as f:
             data = json.load(f)
             timestamps = data["timestamps"]
-        revert_dataset(input_path + ver_name, output_path + scene_name + "/")
+        revert_dataset(input_path + scene_name + "/", output_path + ver_name)
