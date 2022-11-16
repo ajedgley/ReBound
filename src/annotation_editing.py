@@ -347,7 +347,7 @@ class Annotation:
 
 				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
 				self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
-				coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, box_to_drag.center)
+				coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, box_to_drag.center)
 				self.scene_widget.scene.add_geometry("coord_frame", coord_frame, self.coord_frame_mat)
 
 				self.update_props()
@@ -372,13 +372,14 @@ class Annotation:
 		self.previous_index = box_index
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
-		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, origin)
+		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
 		frame_mat = rendering.MaterialRecord()
 		frame_mat.shader = "defaultLit"
 		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
-		self.scene_widget.scene.add_geometry("coord_frame", frame, frame_mat, True)
+		self.scene_widget.scene.add_geometry("coord_frame", frame, self.coord_frame_mat, True)
+		self.scene_widget.force_redraw()
 		self.update_props()
 
 	#This method adds cube mesh volumes to preexisting bounding boxes
@@ -552,7 +553,7 @@ class Annotation:
 			box_to_drag.translate([0, 0, diff])
 			volume_to_drag.translate([0, 0, diff])
 
-		coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(1.0, box_to_drag.center)
+		coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, box_to_drag.center)
 
 		self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
@@ -691,7 +692,7 @@ class Annotation:
 			self.box_indices.pop(current_box)
 			self.volume_indices.pop(current_box)
 			self.boxes_in_scene.pop(current_box)
-			self.box_indices.pop(current_box)
+			self.volumes_in_scene.pop(current_box)
 					
 			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, box_name)
 			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
