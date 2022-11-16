@@ -114,6 +114,8 @@ widgetsnbextension = "==3.5.2"
 zipp = "==3.7.0"
 pycocotools = "==2.0.5"
 setuptools = "==65.4.1"
+pyarrow = "*"
+uuid = "*"
 
 [dev-packages]
 

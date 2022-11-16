@@ -66,7 +66,7 @@ def export_annotations(input_path, output_path):
         for box in annotations["boxes"]:
             # assign a new random tracking id if one is not stored
             if not "id" in box["data"]:
-                box["data"]["id"] = uuid.uuid4
+                box["data"]["id"] = str(uuid.uuid4)
             # calulates internal points if it is not stored
             if not "interior_pts" in box["data"]:
                 box["data"]["interior_pts"] = geometry_utils.compute_interior_points(box, pcd)
