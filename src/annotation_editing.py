@@ -50,25 +50,28 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.Material() #invisible material for box volumes
+		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.Material()
+		self.line_mat_highlight = rendering.MaterialRecord()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.Material()
+		self.line_mat = rendering.MaterialRecord()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.Material()
-		self.coord_frame_mat.shader = "defaultLit"
+		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat.shader = "defaultUnlit"
 
 		self.coord_frame = "coord_frame"
 
+		# mouse and key event modifiers
 		self.z_drag = False
+		self.drag_operation = True
 		self.curr_x = 0.0 #used for initial mouse position in drags
 		self.curr_y = 0.0
+		self.ctrl_is_down = False
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
@@ -77,7 +80,7 @@ class Annotation:
 		self.create_box_scene(scene_widget, boxes_to_render, frame_extrinsic)
 		self.average_depth = self.get_depth_average()
 
-		# shamelessly stolen from lct setup, cuz their window looks nice
+		# calculates margins off of font size
 		em = self.cw.theme.font_size
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
 		layout = gui.Vert(0.50 * em, margin)
@@ -86,10 +89,15 @@ class Annotation:
 		add_box_horiz = gui.Horiz()
 		add_box_button = gui.Button("Add New Bounding Box")
 		toggle_axis_button = gui.Button("Toggle Vertical/Horizontal")
+		toggle_axis_button.toggleable = True
+		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
+		toggle_operation_button.toggleable = True
 		add_box_button.set_on_clicked(self.place_bounding_box)
 		toggle_axis_button.set_on_clicked(self.toggle_axis)
+		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
 		add_box_horiz.add_child(add_box_button)
 		add_box_horiz.add_child(toggle_axis_button)
+		add_box_horiz.add_child(toggle_operation_button)
 
 		#The data for a selected box will be displayed in these fields
 		#the data fields are accessible to any function to allow easy manipulation during drag operations
@@ -210,8 +218,8 @@ class Annotation:
 		self.scene_widget.set_on_mouse(self.mouse_event_handler)
 
 		# sets up keyboard event handling
-		key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
-		scene_widget.set_on_key(key_partial)
+		#key_partial = functools.partial(self.key_event_handler, widget=scene_widget)
+		scene_widget.set_on_key(self.key_event_handler)
 
 	#helper function to place new boxes at the direct camera origin at the depth average
 	def get_center_of_rotation(self):
@@ -228,7 +236,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -273,25 +281,37 @@ class Annotation:
 			#uses depth image to calculate a depth from an x and y mouse pointer coordinate
 			#automatically finds closest box to resulting world coordinates
 			def get_depth(depth_image): #gets world coords from mouse click
+
 				x = event.x - widget.frame.x
 				y = event.y - widget.frame.y
 
 				depth = np.asarray(depth_image)[y, x] #flatten image to depth image, get color value from x,y point
-				world = widget.scene.camera.unproject(
-					event.x, event.y, depth, widget.frame.width, widget.frame.height)
-				output = "({:.3f}, {:.3f}, {:.3f})".format(
-					world[0], world[1], world[2])
+				if depth == 1.0:
+					self.deselect_box() #if depth is 1.0, that is the far plane, deselect
+				else: #select nearest box
+					world = widget.scene.camera.unproject(
+						event.x, event.y, depth, widget.frame.width, widget.frame.height)
+					output = "({:.3f}, {:.3f}, {:.3f})".format(
+						world[0], world[1], world[2])
 
-				get_nearest(world)
+					get_nearest(world)
+
 
 			#simple shortest distance comparison from pointer to box center points
+			#searches using x and y coordinates because using z coord makes behavior unpredictable
 			def get_nearest(world_coords): #searches boxes in the scene for shortest dist
 				boxes = self.volumes_in_scene
 				if len(boxes) != 0:
-					smallest_dist = np.linalg.norm(world_coords - boxes[0].get_center())
+
+					flat_coords_world = np.array([world_coords[0], world_coords[1], self.average_depth])
+					curr_coords_box = boxes[0].get_center()
+					flat_coords_box = np.array([curr_coords_box[0], curr_coords_box[1], self.average_depth])
+					smallest_dist = np.linalg.norm(flat_coords_world - flat_coords_box)
 					closest_box = boxes[0]
 					for box in boxes:
-						curr_dist = np.linalg.norm(world_coords - box.get_center())
+						curr_coords_box = box.get_center()
+						flat_coords_box = np.array([curr_coords_box[0], curr_coords_box[1], self.average_depth])
+						curr_dist = np.linalg.norm(flat_coords_world - flat_coords_box)
 						if curr_dist < smallest_dist:
 							smallest_dist = curr_dist
 							closest_box = box
@@ -304,7 +324,7 @@ class Annotation:
 			return gui.Widget.EventCallbackResult.HANDLED
 
 		#If shift button is down during click event, indicates potential drag operation
-		elif event.is_modifier_down(gui.KeyModifier.SHIFT):
+		elif event.is_modifier_down(gui.KeyModifier.SHIFT) and self.previous_index != -1:
 			current_box = self.previous_index
 			scene_camera = self.scene_widget.scene.camera
 			box_to_drag = self.boxes_in_scene[current_box]
@@ -315,35 +335,36 @@ class Annotation:
 
 			#if the user right clicks and holds shift while dragging
 			#check to see if it is the initial mouse button down event
-			if event.is_button_down(
-					gui.MouseButton.RIGHT) and event.type == gui.MouseEvent.Type.BUTTON_DOWN and event.is_modifier_down(
-					gui.KeyModifier.SHIFT):
+			if event.type == gui.MouseEvent.Type.BUTTON_DOWN:
 				self.curr_x = event.x - self.scene_widget.frame.x	#set the initial position of the click
 				self.curr_y = event.y - self.scene_widget.frame.y
-				print(self.curr_x, self.curr_y)
 
 			#otherwise it's the drag part of the event, continually translate current box by the difference between
 			#start position and current position, multiply by scaling factor due to size of grid
-			elif event.is_button_down(
-					gui.MouseButton.RIGHT) and event.type == gui.MouseEvent.Type.DRAG and event.is_modifier_down(
-					gui.KeyModifier.SHIFT):
+			elif event.type == gui.MouseEvent.Type.DRAG:
 
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, box_name)
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, "coord_frame")
-				prev_pos = scene_camera.unproject(self.curr_x, self.curr_y, self.average_depth,
+				prev_pos = scene_camera.unproject(self.curr_x, self.curr_y, 0.0,
 												  self.scene_widget.frame.width, self.scene_widget.frame.height)
-				curr_pos = scene_camera.unproject(event.x, event.y, self.average_depth,
+				curr_pos = scene_camera.unproject(event.x, event.y, 0.0,
 												  self.scene_widget.frame.width, self.scene_widget.frame.height)
 				x_diff = curr_pos[0] - prev_pos[0]
 				y_diff = curr_pos[1] - prev_pos[1]
 
-				if self.z_drag:  # if z_drag is on, translate by z axis only
-					box_to_drag.translate((0, 0, x_diff))
-					volume_to_drag.translate((0, 0, x_diff))
+				if self.drag_operation:
+					if self.z_drag:  # if z_drag is on, translate by z axis only
+						box_to_drag.translate((0, 0, x_diff))
+						volume_to_drag.translate((0, 0, x_diff))
+					else:
+						box_to_drag.translate((x_diff * 10, y_diff * 10, 0))
+						volume_to_drag.translate((x_diff * 10, y_diff * 10, 0))
 				else:
-					box_to_drag.translate((x_diff*100, y_diff*100, 0))
-					volume_to_drag.translate((x_diff*100, y_diff*100, 0))
+					rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff*10).rotation_matrix
+					box_to_drag.rotate(rotation)
+					volume_to_drag.rotate(rotation)
+
 
 				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
 				self.scene_widget.scene.add_geometry(volume_name, volume_to_drag, self.transparent_mat)
@@ -355,29 +376,54 @@ class Annotation:
 				self.point_cloud.post_redraw()
 
 			return gui.Widget.EventCallbackResult.CONSUMED
+
+
+
 		return gui.Widget.EventCallbackResult.IGNORED
 
+		# Handles key events
+	def key_event_handler(self, event):
+		# delete button handler
+		if event.key == gui.KeyName.LEFT_CONTROL:  # handles events involving ctrl + key
+			if event.type == event.Type.DOWN:
+				self.ctrl_is_down = True
+			else:
+				self.ctrl_is_down = False
+			return gui.Widget.EventCallbackResult.HANDLED
+
+		elif event.key == 127 and event.type == event.Type.DOWN:
+			self.delete_annotation()
+			return gui.Widget.EventCallbackResult.CONSUMED
+
+		elif event.key == 100 and event.type == event.Type.DOWN and self.ctrl_is_down:
+			self.deselect_box()
+			return gui.Widget.EventCallbackResult.CONSUMED
+
+		return gui.Widget.EventCallbackResult.IGNORED
+	#deselect_box removes current properties, un-highlights box, and sets selected box back to -1
+	def deselect_box(self):
+		if self.previous_index != -1:
+			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
+			self.scene_widget.scene.show_geometry(self.coord_frame, False)
+
+		self.point_cloud.post_redraw()
+
+		self.previous_index = -1
+		self.box_selected = None
+		self.update_props()
 	#select_box takes a box name (string) and checks to see if a previous box has been selected
 	#then it modifies the appropriate line widths to select and deselect boxes
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			prev_mat = rendering.Material()
-			prev_mat.shader = "unlitLine"
-			prev_mat.line_width = 0.25 #return line_width to normal
-			rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, self.box_indices[self.previous_index],
-														   prev_mat)
+			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
-		frame_mat = rendering.Material()
-		frame_mat.shader = "defaultLit"
-		mat = rendering.Material()
-		mat.shader = "unlitLine" #default linewidth is 1.0, makes box look highlighted
-		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, mat)
+		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, self.line_mat_highlight)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, self.coord_frame_mat, True)
 		self.scene_widget.force_redraw()
 		self.update_props()
@@ -401,14 +447,6 @@ class Annotation:
 			self.box_count += 1
 
 		self.point_cloud.post_redraw()
-		
-	def key_event_handler(self, event, widget):
-		# delete button handler
-		if event.key == 127 and event.type == event.Type.DOWN:
-			self.delete_annotation()
-			return gui.Widget.EventCallbackResult.CONSUMED
-		
-		return gui.Widget.EventCallbackResult.IGNORED
 
 	#when something changes with a box, that means it is currently selected
 	#update the properties in the property window
@@ -424,6 +462,10 @@ class Annotation:
 			i.enabled = enabled
 
 		if not enabled:
+			boxes[0].selected_index = 0
+			for i in range(1,10):
+				boxes[i].text_value = ""
+			self.cw.post_redraw()
 			return -1
 
 		annot_type = gui.Horiz()
@@ -486,7 +528,7 @@ class Annotation:
 		]
 		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
 		#to the boxes.json file
-		box_to_rotate = o3d.geometry.OrientedBoundingBox(box_object)
+		box_to_rotate = o3d.geometry.OrientedBoundingBox(box_object) #copy box object to do transforms on
 		reverse_extrinsic = Quaternion(self.frame_extrinsic['rotation']).inverse
 		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
@@ -679,8 +721,11 @@ class Annotation:
 
 	#toggles horizontal or vertical drag
 	def toggle_axis(self):
-		print(self.z_drag)
 		self.z_drag = not self.z_drag
+
+	def toggle_drag_operation(self):
+		self.drag_operation = not self.drag_operation
+
 
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
