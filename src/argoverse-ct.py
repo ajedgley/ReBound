@@ -126,7 +126,7 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
     annotation_names = []
     confidences = []
     ids = []
-    interior_pts = []
+    internal_pts = []
 
     # Get annotation, rotation, confidence level, quaternion, center, diminensions, uuids, and interior points of each bounding box in frame
     annotations = annotations[annotations["timestamp_ns"] == int(timestamp)]
@@ -139,8 +139,8 @@ def extract_bounding(annotations, frame_num, timestamp, output_path):
         # Confidence set to 100 by default for ground truth data
         confidences.append(100)
         ids.append(annotation.track_uuid)
-        interior_pts.append(annotation.num_interior_pts)
-    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, data = {"id":ids, "interior_pts":interior_pts })
+        internal_pts.append(annotation.num_interior_pts)
+    dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, internal_pts)
 
 # Main method for converting datasets
 def convert_dataset(input_path, output_path):

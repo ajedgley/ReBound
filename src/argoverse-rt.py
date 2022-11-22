@@ -65,14 +65,14 @@ def export_annotations(input_path, output_path):
         pcd = o3d.io.read_point_cloud(input_path + "pointcloud/lidar/" + str(frame_num) + ".pcd").points
         for box in annotations["boxes"]:
             # assign a new random tracking id if one is not stored
-            if not "id" in box["data"]:
-                box["data"]["id"] = str(uuid.uuid4)
+            if not "id" in box:
+                box["id"] = str(uuid.uuid4)
             # calulates internal points if it is not stored
-            if not "interior_pts" in box["data"]:
-                box["data"]["interior_pts"] = geometry_utils.compute_interior_points(box, pcd)
+            if not "internal_pts" in box["data"]:
+                box["internal_pts"] = geometry_utils.compute_interior_points(box, pcd)
             row_list.append({
                 "timestamp_ns": timestamps.loc[frame_num]["timestamps"],
-                "track_uuid": box["data"]["id"],
+                "track_uuid": box["id"],
                 "category": box["annotation"],
                 "length_m": box["size"][1],
                 "width_m": box["size"][0],
@@ -84,7 +84,7 @@ def export_annotations(input_path, output_path):
                 "tx_m": box["origin"][0],
                 "ty_m": box["origin"][1],
                 "tz_m": box["origin"][2],
-                "num_interior_pts": box["data"]["interior_pts"],
+                "num_interior_pts": box["internal_pts"],
             })
         
         frame_num += 1

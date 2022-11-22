@@ -138,7 +138,7 @@ def add_lidar_frame_from_pcd(path, name, frame_num, input_path):
     full_path = os.path.join(path, 'pointcloud', name, str(frame_num) + '.pcd')
     copyfile(input_path, full_path)
 
-def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, predicted=False, data=None):   
+def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, internal_points, predicted=False, data=None):   
     """Adds box data for one frame
     Args:
         path: path to LCT directory
@@ -150,7 +150,10 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         confidence: list of length n of integers where every element is a value from 0-100 representing the confidence percentage
             should be 101 for ground truth.
         origins, sizes, rotations, annotation_names, confidences should all be the same size
+        ids: corresponds to tracking ids or instance ids (represents a single object across different frames)
         predicted: Optional argument that specifies that this data is predicted data
+        internal_points: the number of lidar points within the box
+        data: any additional data needed for exporting
     Returns:
         None
         """
@@ -188,6 +191,8 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['rotation'] = rotations[i]
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
+        box['id'] = ids[i]
+        box['internal-pts'] = internal_points[i]
         if data:
             box['data'] = {}
             for k in data.keys():
