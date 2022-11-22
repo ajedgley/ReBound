@@ -17,6 +17,7 @@ import os
 import sys
 import json
 from lct import Window
+from copy import deepcopy
 
 ORIGIN = 0
 SIZE = 1
@@ -30,11 +31,12 @@ class Annotation:
 	# returns created window with all its buttons and whatnot
 	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render,
 				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map):
-		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
+		self.cw = gui.Application.instance.create_window("LCT", 600, 525)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
 		self.frame_extrinsic = frame_extrinsic
 		self.all_pred_annotations = annotation_types
+		self.old_boxes = deepcopy(boxes)
 		self.boxes_to_render = boxes_to_render 		#list of box metadata in scene
 		self.box_indices = box_indices 				#name references for bounding boxes in scene
 		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
@@ -50,18 +52,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight = rendering.Material()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.MaterialRecord()
+		self.line_mat = rendering.Material()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat = rendering.Material()
 		self.coord_frame_mat.shader = "defaultUnlit"
 
 		self.coord_frame = "coord_frame"
@@ -88,7 +90,7 @@ class Annotation:
 		# button for adding a new bounding box
 		add_box_horiz = gui.Horiz()
 		add_box_button = gui.Button("Add New Bounding Box")
-		toggle_axis_button = gui.Button("Toggle Vertical/Horizontal")
+		toggle_axis_button = gui.Button("Toggle Vertical Drag")
 		toggle_axis_button.toggleable = True
 		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
 		toggle_operation_button.toggleable = True
@@ -96,7 +98,9 @@ class Annotation:
 		toggle_axis_button.set_on_clicked(self.toggle_axis)
 		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
 		add_box_horiz.add_child(add_box_button)
+		add_box_horiz.add_fixed(5)
 		add_box_horiz.add_child(toggle_axis_button)
+		add_box_horiz.add_fixed(5)
 		add_box_horiz.add_child(toggle_operation_button)
 
 		#The data for a selected box will be displayed in these fields
@@ -105,6 +109,8 @@ class Annotation:
 		trans_collapse = gui.CollapsableVert("Position", 0, margin)
 		rot_collapse = gui.CollapsableVert("Rotation", 0, margin)
 		scale_collapse = gui.CollapsableVert("Scale", 0, margin)
+		self.save_status = gui.Label("                                            ")
+		self.save_check = 0
 		self.annotation_type = gui.Label("                             ")
 		self.annotation_class = gui.Combobox()
 		self.annotation_class.set_on_selection_changed(self.label_change_handler)
@@ -182,7 +188,10 @@ class Annotation:
 		save_as_button.set_on_clicked(self.save_as)
 		
 		save_annotation_horiz.add_child(save_annotation_button)
+		save_annotation_horiz.add_fixed(5)
 		save_annotation_horiz.add_child(save_as_button)
+		save_annotation_horiz.add_fixed(5)
+		save_annotation_horiz.add_child(self.save_status)
 
 		# button for exiting annotation mode, set_on_click in lct.py for a cleaner restart
 		exit_annotation_horiz = gui.Horiz()
@@ -198,16 +207,13 @@ class Annotation:
 		self.delete_annotation_button.set_on_clicked(self.delete_annotation)
 		delete_annotation_horiz.add_child(self.delete_annotation_button)
 
-		# empty horiz, just cuz i think exit_annotation looks better at the bottom
-		empty_horiz = gui.Horiz()
-
 		# adding all of the horiz to the vert, in order
 		layout.add_child(add_box_horiz)
 		layout.add_child(save_annotation_horiz)
 		layout.add_child(properties_vert)
 		layout.add_child(delete_annotation_horiz)
 		
-		layout.add_child(empty_horiz)
+		layout.add_fixed(10)
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
@@ -236,7 +242,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 
-		mat = rendering.MaterialRecord()
+		mat = rendering.Material()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -752,6 +758,8 @@ class Annotation:
 	
 	# overwrites currently open file with temp_boxes
 	def save_changes_to_json(self, path):
+		self.save_status.text = "Changes saved."
+		self.save_check = 1
 		self.cw.close_dialog()
 		with open(path, "w") as outfile:
 			outfile.write(json.dumps(self.temp_boxes))
@@ -766,11 +774,36 @@ class Annotation:
 
 	# basically just restarts the program in order to exit
 	def exit_annotation_mode(self):
+		if (self.save_check == 0 and self.temp_boxes != self.old_boxes):
+			dialog = gui.Dialog("Confirm Exit")
+			em = self.cw.theme.font_size
+			margin = gui.Margins(2* em, 1 * em, 2 * em, 2 * em)
+			layout = gui.Vert(0, margin)
+			button_layout = gui.Horiz()
+			
+			layout.add_child(gui.Label("Are you sure you want to exit annotation mode? You have unsaved changes."))
+			layout.add_fixed(10)
+			confirm_button = gui.Button("Exit")
+			back_button = gui.Button("Go Back")
+
+			confirm_button.set_on_clicked(self.confirm_exit)
+			back_button.set_on_clicked(self.cw.close_dialog)
+			button_layout.add_child(back_button)
+			button_layout.add_fixed(5)
+			button_layout.add_child(confirm_button)
+			layout.add_child(button_layout)
+			dialog.add_child(layout)
+			self.cw.show_dialog(dialog)
+		else:
+			self.confirm_exit()
+
+			
+	def confirm_exit(self):
 		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
 		Window(sys.argv[2])
 		self.point_cloud.close()
 		self.cw.close()
-
+		
 	# getters and setters below
 	def getCw(self):
 		return self.cw
