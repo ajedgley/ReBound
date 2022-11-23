@@ -12,6 +12,7 @@ from nuscenes.utils.data_classes import Box
 import matplotlib.colors
 import numpy as np
 from pyquaternion import Quaternion
+from scipy.spatial.transform import Rotation
 import random
 import os
 import sys
@@ -49,23 +50,24 @@ class Annotation:
 		
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
+		self.curr_box_depth = 0.0
 		self.previous_index = -1 #-1 denotes, no box selected
 		#used to generate unique ids for boxes and volumes
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.Material() #invisible material for box volumes
+		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.Material()
+		self.line_mat_highlight = rendering.MaterialRecord()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.Material()
+		self.line_mat = rendering.MaterialRecord()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.Material()
+		self.coord_frame_mat = rendering.MaterialRecord()
 		self.coord_frame_mat.shader = "defaultUnlit"
 
 		self.coord_frame = "coord_frame"
@@ -79,7 +81,7 @@ class Annotation:
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
-		
+
 		# used for adding new annotations
 		self.new_annotation_types = []
 
@@ -97,19 +99,19 @@ class Annotation:
 		add_box_button = gui.Button("Add New Bounding Box")
 		add_box_button.set_on_clicked(self.place_bounding_box)
 		add_box_horiz.add_child(add_box_button)
-		
+
 		# buttons for saving/saving as annotation changes
 		save_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		save_annotation_button = gui.Button("Save Changes")
 		save_partial = functools.partial(self.save_changes_to_json, path=path)
 		save_annotation_button.set_on_clicked(save_partial)
-		
+
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
-		
+
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
-		
+
 		# dropdown selector for selecting current drag mode
 		toggle_horiz = gui.Horiz(0.50 * em, margin)
 		toggle_label = gui.Label("Current Drag Mode: ")
@@ -123,7 +125,7 @@ class Annotation:
 		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
 		toggle_operation_button.toggleable = True
 		add_box_button.set_on_clicked(self.place_bounding_box)
-		
+
 		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
 		add_box_horiz.add_child(add_box_button)
 		add_box_horiz.add_fixed(5)
@@ -227,7 +229,7 @@ class Annotation:
 		exit_annotation_button = gui.Button("Exit Annotation Mode")
 		exit_annotation_button.set_on_clicked(self.exit_annotation_mode)
 		exit_annotation_horiz.add_child(exit_annotation_button)
-		
+
 		# deletes bounding box, should only be enabled if a bounding box is selected
 		delete_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		self.delete_annotation_button = gui.Button("Delete Annotation")
@@ -246,7 +248,7 @@ class Annotation:
 
 		self.cw.add_child(layout)
 		self.update_props()
-		
+
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
@@ -271,7 +273,7 @@ class Annotation:
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
 
-		mat = rendering.Material()
+		mat = rendering.MaterialRecord()
 		mat.shader = "unlitLine"
 		mat.line_width = 0.25
 
@@ -318,23 +320,22 @@ class Annotation:
 				else: #select nearest box
 					world = widget.scene.camera.unproject(
 						event.x, event.y, depth, widget.frame.width, widget.frame.height)
-					output = "({:.3f}, {:.3f}, {:.3f})".format(
-						world[0], world[1], world[2])
+					self.curr_box_depth = depth
 
 					get_nearest(world)
 
 
 			#simple shortest distance comparison from pointer to box center points
 			#searches using x and y coordinates because using z coord makes behavior unpredictable
-			def get_nearest(world_coords): #searches boxes in the scene for shortest dist
+			def get_nearest(world_coords):
 				boxes = self.volumes_in_scene
 				if len(boxes) != 0:
-
 					flat_coords_world = np.array([world_coords[0], world_coords[1], self.average_depth])
 					curr_coords_box = boxes[0].get_center()
 					flat_coords_box = np.array([curr_coords_box[0], curr_coords_box[1], self.average_depth])
 					smallest_dist = np.linalg.norm(flat_coords_world - flat_coords_box)
 					closest_box = boxes[0]
+
 					for box in boxes:
 						curr_coords_box = box.get_center()
 						flat_coords_box = np.array([curr_coords_box[0], curr_coords_box[1], self.average_depth])
@@ -359,38 +360,38 @@ class Annotation:
 			volume_to_drag = self.volumes_in_scene[current_box]
 			volume_name = self.volume_indices[current_box]
 
-
-			#if the user right clicks and holds shift while dragging
-			#check to see if it is the initial mouse button down event
-			if event.type == gui.MouseEvent.Type.BUTTON_DOWN:
-				self.curr_x = event.x - self.scene_widget.frame.x	#set the initial position of the click
-				self.curr_y = event.y - self.scene_widget.frame.y
-
 			#otherwise it's the drag part of the event, continually translate current box by the difference between
 			#start position and current position, multiply by scaling factor due to size of grid
-			elif event.type == gui.MouseEvent.Type.DRAG:
-
+			if event.type == gui.MouseEvent.Type.DRAG:
+				box_center = box_to_drag.center
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, box_name)
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, volume_name)
 				rendering.Open3DScene.remove_geometry(self.scene_widget.scene, "coord_frame")
-				prev_pos = scene_camera.unproject(self.curr_x, self.curr_y, 0.0,
+				curr_pos = scene_camera.unproject(event.x, event.y, self.curr_box_depth,
 												  self.scene_widget.frame.width, self.scene_widget.frame.height)
-				curr_pos = scene_camera.unproject(event.x, event.y, 0.0,
-												  self.scene_widget.frame.width, self.scene_widget.frame.height)
-				x_diff = curr_pos[0] - prev_pos[0]
-				y_diff = curr_pos[1] - prev_pos[1]
+				x_diff = curr_pos[0] - box_center[0]
+				y_diff = curr_pos[1] - box_center[1]
 
 				if self.drag_operation:
 					if self.z_drag:  # if z_drag is on, translate by z axis only
 						box_to_drag.translate((0, 0, x_diff))
 						volume_to_drag.translate((0, 0, x_diff))
 					else:
-						box_to_drag.translate((x_diff * 10, y_diff * 10, 0))
-						volume_to_drag.translate((x_diff * 10, y_diff * 10, 0))
+						box_to_drag.translate((x_diff, y_diff, 0))
+						volume_to_drag.translate((x_diff, y_diff, 0))
 				else:
-					rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff*10).rotation_matrix
-					box_to_drag.rotate(rotation)
-					volume_to_drag.rotate(rotation)
+					if self.tool_label.text == "X":
+						rotation = Quaternion(axis=[-1, 0, 0], degrees=x_diff).rotation_matrix
+						box_to_drag.rotate(rotation)
+						volume_to_drag.rotate(rotation)
+					elif self.tool_label.text == "Y":
+						rotation = Quaternion(axis=[0, -1, 0], degrees=x_diff).rotation_matrix
+						box_to_drag.rotate(rotation)
+						volume_to_drag.rotate(rotation)
+					else:
+						rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff).rotation_matrix
+						box_to_drag.rotate(rotation)
+						volume_to_drag.rotate(rotation)
 
 
 				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
@@ -528,20 +529,22 @@ class Annotation:
 						self.annotation_class.add_item(annotation)
 
 		box_center = box_object.center
-		box_rotate = box_object.R
+		box_rotate = list(box_object.R)
+		r = Rotation.from_matrix(box_rotate)
+		euler_rotations = r.as_euler("xyz", False)
 		#box_rotate_axis variables are calculated in radians
-		box_rotate_x = math.atan2(box_rotate[2][1], box_rotate[2][2])
-		box_rotate_y = math.atan2((-1 * box_rotate[2][0]), math.sqrt((box_rotate[2][1] ** 2) + (box_rotate[2][2] ** 2)))
-		box_rotate_z = math.atan2(box_rotate[1][0], box_rotate[0][0])
+		#box_rotate_x = math.atan2(box_rotate[2][1], box_rotate[2][2])
+		#box_rotate_y = math.atan2((-1 * box_rotate[2][0]), math.sqrt((box_rotate[0][0] ** 2) + (box_rotate[1][0] ** 2)))
+		#box_rotate_z = math.atan2(box_rotate[1][0], box_rotate[0][0])
 		box_scale = box_object.extent
 
 		self.trans_x.text_value = "{:.3f}".format(box_center[0])
 		self.trans_y.text_value = "{:.3f}".format(box_center[1])
 		self.trans_z.text_value = "{:.3f}".format(box_center[2])
 
-		self.rot_x.text_value = "{:.3f}".format(math.degrees(box_rotate_x))
-		self.rot_y.text_value = "{:.3f}".format(math.degrees(box_rotate_y))
-		self.rot_z.text_value = "{:.3f}".format(math.degrees(box_rotate_z))
+		self.rot_x.text_value = "{:.3f}".format(math.degrees(euler_rotations[0]))
+		self.rot_y.text_value = "{:.3f}".format(math.degrees(euler_rotations[1]))
+		self.rot_z.text_value = "{:.3f}".format(math.degrees(euler_rotations[2]))
 
 		self.scale_x.text_value = "{:.3f}".format(box_scale[0])
 		self.scale_y.text_value = "{:.3f}".format(box_scale[1])
@@ -550,7 +553,7 @@ class Annotation:
 		#updates array of all properties to allow referencing previous values
 		self.box_props_selected = [
 			box_center[0], box_center[1], box_center[2],
-			box_rotate_x, box_rotate_y, box_rotate_z,
+			euler_rotations[0], euler_rotations[1], euler_rotations[2],
 			box_scale[0], box_scale[1], box_scale[2]
 		]
 		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
@@ -583,14 +586,14 @@ class Annotation:
 		current_box = self.boxes_in_scene[self.previous_index]
 		box_name = self.box_indices[self.previous_index]
 		self.scene_widget.scene.remove_geometry(box_name)
-		
+
 		# changes color of box based on label selection
 		new_color = None
 		if label in self.color_map.keys():
 			new_color = self.color_map[label]
 		elif label in self.pred_color_map():
 			new_color = self.color_map[label]
-		
+
 		new_color = tuple(x/255 for x in new_color)
 		current_box.color = new_color
 		self.scene_widget.scene.add_geometry(box_name, current_box, self.line_mat_highlight)
@@ -644,20 +647,20 @@ class Annotation:
 
 		self.scene_widget.scene.remove_geometry(box_name)
 		self.scene_widget.scene.remove_geometry(volume_name)
-
+		current_rot = Quaternion(matrix=box_to_drag.R) #used to rotate the rotation axis for local rotation of boxes
 		if axis == "x":
-			diff = value - math.degrees(self.box_props_selected[3])
-			rotation = Quaternion(axis=[1, 0, 0], degrees=diff).rotation_matrix
+			rotation_axis = current_rot.rotate([1, 0, 0])
+			rotation = Quaternion(axis=rotation_axis, degrees=value).rotation_matrix
 			box_to_drag.rotate(rotation)
 			volume_to_drag.rotate(rotation)
 		elif axis == "y":
-			diff = value - math.degrees(self.box_props_selected[4])
-			rotation = Quaternion(axis=[0, 1, 0], degrees=diff).rotation_matrix
+			rotation_axis = current_rot.rotate([0, 1, 0])
+			rotation = Quaternion(axis=rotation_axis, degrees=value).rotation_matrix
 			box_to_drag.rotate(rotation)
 			volume_to_drag.rotate(rotation)
 		else:
-			diff = value - math.degrees(self.box_props_selected[5])
-			rotation = Quaternion(axis=[0, 0, 1], degrees=diff).rotation_matrix
+			rotation_axis = current_rot.rotate([0, 0, 1])
+			rotation = Quaternion(axis=rotation_axis, degrees=value).rotation_matrix
 			box_to_drag.rotate(rotation)
 			volume_to_drag.rotate(rotation)
 
@@ -780,26 +783,26 @@ class Annotation:
 			self.previous_index = -1
 			self.box_selected = None
 			self.update_props()
-	
+
 	# creates popup allowing user to add new annotation type
 	def add_new_annotation_type(self):
 		dialog = gui.Dialog("Create New Annotation")
 		layout = gui.Vert(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
-		
+
 		text_box_horiz = gui.Horiz()
 		self.text_box = gui.TextEdit()
 		self.text_box.placeholder_text = "New Annotation Name"
 		text_box_horiz.add_child(self.text_box)
-		
+
 		buttons_horiz = gui.Horiz(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
 		submit_button = gui.Button("Submit")
 		submit_button.set_on_clicked(self.new_annotation_confirmation)
 		cancel_button = gui.Button("Cancel")
 		cancel_button.set_on_clicked(self.cw.close_dialog)
-		
+
 		buttons_horiz.add_child(submit_button)
 		buttons_horiz.add_child(cancel_button)
-		
+
 		layout.add_child(text_box_horiz)
 		layout.add_child(buttons_horiz)
 		dialog.add_child(layout)
@@ -813,15 +816,15 @@ class Annotation:
 		self.annotation_class.add_item(self.text_box.text_value)
 		self.new_annotation_types.append(self.text_box.text_value)
 		self.color_map[self.text_box.text_value] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-		
+
 		self.annotation_class.selected_index = self.annotation_class.number_of_items - 1
-		
+
 		# if a box is currently selected, it becomes the new type
 		if self.box_selected is not None:
-		
+
 			self.label_change_handler(self.text_box.text_value, self.annotation_class.number_of_items - 1)
 		self.cw.close_dialog()
-	
+
 	# overwrites currently open file with temp_boxes
 	def save_changes_to_json(self, path):
 		self.save_status.text = "Changes saved."
@@ -846,7 +849,7 @@ class Annotation:
 			margin = gui.Margins(2* em, 1 * em, 2 * em, 2 * em)
 			layout = gui.Vert(0, margin)
 			button_layout = gui.Horiz()
-			
+
 			layout.add_child(gui.Label("Are you sure you want to exit annotation mode? You have unsaved changes."))
 			layout.add_fixed(10)
 			confirm_button = gui.Button("Exit")
@@ -863,13 +866,13 @@ class Annotation:
 		else:
 			self.confirm_exit()
 
-			
+
 	def confirm_exit(self):
 		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
 		Window(sys.argv[2])
 		self.point_cloud.close()
 		self.cw.close()
-		
+
 	# getters and setters below
 	def getCw(self):
 		return self.cw
