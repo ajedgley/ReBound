@@ -123,7 +123,7 @@ class Annotation:
 		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
 		toggle_operation_button.toggleable = True
 		add_box_button.set_on_clicked(self.place_bounding_box)
-		toggle_axis_button.set_on_clicked(self.toggle_axis)
+		
 		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
 		add_box_horiz.add_child(add_box_button)
 		add_box_horiz.add_fixed(5)
