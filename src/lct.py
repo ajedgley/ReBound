@@ -1059,17 +1059,9 @@ class Window:
             message = gui.Label("No Errors Found")
             layout.add_child(message)
         window.add_child(layout)
-
-    # controls what editing mode should be able to do
     
-    # TODO:
-    # Add button to control window, onclick disables the current mouse functionality (ie dragging window), instead next click = new bounding box
-    # On exiting editing mode, restarts the application/resets it to the 3 window view 
-    # Add button to exit editing mode
-    # Saving functionality (haven't thought that far ahead)
+    # Sets program to annotation editing mode, see annotation_editing.py
     def on_annotation_start(self):
-    	
-    	# closes them for now, just for convenience. Maybe not necessary final build, we'll see
     	self.controls.close()
     	self.image_window.close()
     	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,

@@ -17,6 +17,7 @@ import os
 import sys
 import json
 from lct import Window
+import random
 
 ORIGIN = 0
 SIZE = 1
@@ -72,6 +73,9 @@ class Annotation:
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
+		
+		# used for adding new annotations
+		self.new_annotation_types = []
 
 		#initialize the scene with transparent volumes to allow mouse interactions with boxes
 		self.create_box_scene(scene_widget, boxes_to_render, frame_extrinsic)
@@ -83,13 +87,32 @@ class Annotation:
 		layout = gui.Vert(0.50 * em, margin)
 
 		# button for adding a new bounding box
-		add_box_horiz = gui.Horiz()
+		add_box_horiz = gui.Horiz(0.50 * em, margin)
 		add_box_button = gui.Button("Add New Bounding Box")
-		toggle_axis_button = gui.Button("Toggle Vertical/Horizontal")
 		add_box_button.set_on_clicked(self.place_bounding_box)
-		toggle_axis_button.set_on_clicked(self.toggle_axis)
 		add_box_horiz.add_child(add_box_button)
-		add_box_horiz.add_child(toggle_axis_button)
+		
+		# buttons for saving/saving as annotation changes
+		save_annotation_horiz = gui.Horiz(0.50 * em, margin)
+		save_annotation_button = gui.Button("Save Changes")
+		save_partial = functools.partial(self.save_changes_to_json, path=path)
+		save_annotation_button.set_on_clicked(save_partial)
+		
+		save_as_button = gui.Button("Save As")
+		save_as_button.set_on_clicked(self.save_as)
+		
+		save_annotation_horiz.add_child(save_annotation_button)
+		save_annotation_horiz.add_child(save_as_button)
+		
+		# dropdown selector for selecting current drag mode
+		toggle_horiz = gui.Horiz(0.50 * em, margin)
+		toggle_label = gui.Label("Current Drag Mode: ")
+		toggle_axis_selector = gui.Combobox()
+		toggle_axis_selector.set_on_selection_changed(self.toggle_axis)
+		toggle_axis_selector.add_item("Horizontal")
+		toggle_axis_selector.add_item("Vertical")
+		toggle_horiz.add_child(toggle_label)
+		toggle_horiz.add_child(toggle_axis_selector)
 
 		#The data for a selected box will be displayed in these fields
 		#the data fields are accessible to any function to allow easy manipulation during drag operations
@@ -102,6 +125,8 @@ class Annotation:
 		self.annotation_class.set_on_selection_changed(self.label_change_handler)
 		for annotation in self.all_pred_annotations:
 			self.annotation_class.add_item(annotation)
+		add_custom_annotation_button = gui.Button("Add Custom Annotation")
+		add_custom_annotation_button.set_on_clicked(self.add_new_annotation_type)
 		self.trans_x = gui.TextEdit()
 		self.trans_x.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="x"))
 		self.trans_y = gui.TextEdit()
@@ -124,9 +149,10 @@ class Annotation:
 		annot_type = gui.Horiz()
 		annot_type.add_child(gui.Label("Type:"))
 		annot_type.add_child(self.annotation_type)
-		annot_class = gui.Horiz()
+		annot_class = gui.Horiz(0.50 * em)
 		annot_class.add_child(gui.Label("Class:"))
 		annot_class.add_child(self.annotation_class)
+		annot_class.add_child(add_custom_annotation_button)
 		annot_vert = gui.Vert()
 		annot_vert.add_child(annot_type)
 		annot_vert.add_child(annot_class)
@@ -162,30 +188,9 @@ class Annotation:
 		properties_vert.add_child(trans_collapse)
 		properties_vert.add_child(rot_collapse)
 		properties_vert.add_child(scale_collapse)
-
-
-		# buttons for saving/saving as annotation changes
-		save_annotation_horiz = gui.Horiz()
-		save_annotation_button = gui.Button("Save Changes")
-		save_partial = functools.partial(self.save_changes_to_json, path=path)
-		save_annotation_button.set_on_clicked(save_partial)
-		
-		save_as_button = gui.Button("Save As")
-		save_as_button.set_on_clicked(self.save_as)
-		
-		save_annotation_horiz.add_child(save_annotation_button)
-		save_annotation_horiz.add_child(save_as_button)
-
-		# button for exiting annotation mode, set_on_click in lct.py for a cleaner restart
-		exit_annotation_horiz = gui.Horiz()
-		exit_annotation_button = gui.Button("Exit Annotation Mode")
-		exit_annotation_button.set_on_clicked(self.exit_annotation_mode)
-		exit_annotation_horiz.add_child(exit_annotation_button)
-		
-		# add selected box info tracking here?
 		
 		# deletes bounding box, should only be enabled if a bounding box is selected
-		delete_annotation_horiz = gui.Horiz()
+		delete_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		self.delete_annotation_button = gui.Button("Delete Annotation")
 		self.delete_annotation_button.set_on_clicked(self.delete_annotation)
 		delete_annotation_horiz.add_child(self.delete_annotation_button)
@@ -193,9 +198,16 @@ class Annotation:
 		# empty horiz, just cuz i think exit_annotation looks better at the bottom
 		empty_horiz = gui.Horiz()
 
+		# button for exiting annotation mode, set_on_click in lct.py for a cleaner restart
+		exit_annotation_horiz = gui.Horiz(0.50 * em, margin)
+		exit_annotation_button = gui.Button("Exit Annotation Mode")
+		exit_annotation_button.set_on_clicked(self.exit_annotation_mode)
+		exit_annotation_horiz.add_child(exit_annotation_button)
+
 		# adding all of the horiz to the vert, in order
 		layout.add_child(add_box_horiz)
 		layout.add_child(save_annotation_horiz)
+		layout.add_child(toggle_horiz)
 		layout.add_child(properties_vert)
 		layout.add_child(delete_annotation_horiz)
 		
@@ -254,14 +266,6 @@ class Annotation:
 		self.point_cloud.post_redraw()
 		self.cw.post_redraw()
 		self.box_count += 1
-
-	# disables current mouse functionality, ie dragging screen and stuff
-	def disable_mouse(self, event):
-		return gui.Widget.EventCallbackResult.CONSUMED
-
-	# re-enables mouse functionality to their defaults
-	def enable_mouse(self, event):
-		return gui.Widget.EventCallbackResult.IGNORED
 
 	#Takes the frame x and y coordinates and flattens the 3D scene into a 2D depth image
 	#The X and Y coordinates select the depth value from the depth image and converts it into a depth value
@@ -454,7 +458,7 @@ class Annotation:
 			if self.annotation_class.get_item(0) != selected:
 				self.annotation_class.clear_items()
 				self.annotation_class.add_item(selected)
-				for annotation in self.all_pred_annotations:
+				for annotation in self.all_pred_annotations + self.new_annotation_types:
 					if annotation != selected:
 						self.annotation_class.add_item(annotation)
 
@@ -514,12 +518,14 @@ class Annotation:
 		current_box = self.boxes_in_scene[self.previous_index]
 		box_name = self.box_indices[self.previous_index]
 		self.scene_widget.scene.remove_geometry(box_name)
+		
 		# changes color of box based on label selection
 		new_color = None
 		if label in self.color_map.keys():
 			new_color = self.color_map[label]
 		elif label in self.pred_color_map():
 			new_color = self.color_map[label]
+		
 		new_color = tuple(x/255 for x in new_color)
 		current_box.color = new_color
 		self.scene_widget.scene.add_geometry(box_name, current_box, self.line_mat_highlight)
@@ -677,10 +683,12 @@ class Annotation:
 			"data": data
 		}
 
-	#toggles horizontal or vertical drag
-	def toggle_axis(self):
-		print(self.z_drag)
-		self.z_drag = not self.z_drag
+	#sets horizontal or vertical drag
+	def toggle_axis(self, option, index):
+		if index == 0:
+			self.z_drag = False
+		else:
+			self.z_drag = True
 
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
@@ -703,7 +711,47 @@ class Annotation:
 			self.previous_index = -1
 			self.box_selected = None
 			self.update_props()
+	
+	# creates popup allowing user to add new annotation type
+	def add_new_annotation_type(self):
+		dialog = gui.Dialog("Create New Annotation")
+		layout = gui.Vert(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
+		
+		text_box_horiz = gui.Horiz()
+		self.text_box = gui.TextEdit()
+		self.text_box.placeholder_text = "New Annotation Name"
+		text_box_horiz.add_child(self.text_box)
+		
+		buttons_horiz = gui.Horiz(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
+		submit_button = gui.Button("Submit")
+		submit_button.set_on_clicked(self.new_annotation_confirmation)
+		cancel_button = gui.Button("Cancel")
+		cancel_button.set_on_clicked(self.cw.close_dialog)
+		
+		buttons_horiz.add_child(submit_button)
+		buttons_horiz.add_child(cancel_button)
+		
+		layout.add_child(text_box_horiz)
+		layout.add_child(buttons_horiz)
+		dialog.add_child(layout)
+		self.cw.show_dialog(dialog)
 
+	# on submit button for add_new_annotation_type, makes updates to combobox
+	def new_annotation_confirmation(self):
+		# if blank then do nothing
+		if len(self.text_box.text_value) == 0:
+			return 0
+		self.annotation_class.add_item(self.text_box.text_value)
+		self.new_annotation_types.append(self.text_box.text_value)
+		self.color_map[self.text_box.text_value] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+		
+		self.annotation_class.selected_index = self.annotation_class.number_of_items - 1
+		
+		# if a box is currently selected, it becomes the new type
+		if self.box_selected is not None:
+		
+			self.label_change_handler(self.text_box.text_value, self.annotation_class.number_of_items - 1)
+		self.cw.close_dialog()
 	
 	# overwrites currently open file with temp_boxes
 	def save_changes_to_json(self, path):
