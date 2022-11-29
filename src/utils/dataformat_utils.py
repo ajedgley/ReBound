@@ -192,9 +192,9 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
         box['id'] = ids[i]
-        box['internal-pts'] = internal_points[i]
+        box['internal_pts'] = internal_points[i]
+        box['data'] = {}
         if data:
-            box['data'] = {}
             for k in data.keys():
                 box['data'][k] = data[k][i]
         box_data['boxes'].append(box)

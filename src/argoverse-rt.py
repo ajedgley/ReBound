@@ -7,7 +7,9 @@ import getopt
 import json
 import os
 import pandas as pd
+import re
 import sys
+from utils import dataformat_utils
 from utils import geometry_utils
 import open3d as o3d
 import uuid
@@ -51,6 +53,14 @@ def parse_options():
 def export_annotations(input_path, output_path):
     """Exports the annotations to an existing argoverse directory
     """
+    # Setup progress bar
+    frame_count = 0
+    for d in os.scandir(input_path + "bounding/"):
+        res = re.match(r"\d+",d.name)
+        if d.is_dir() and res:
+            frame_count += 1
+    dataformat_utils.print_progress_bar(0, frame_count)
+
     # read timestamps
     timestamps = pd.read_csv(input_path + 'timestamps.csv')
 
@@ -65,10 +75,9 @@ def export_annotations(input_path, output_path):
         pcd = o3d.io.read_point_cloud(input_path + "pointcloud/lidar/" + str(frame_num) + ".pcd").points
         for box in annotations["boxes"]:
             # assign a new random tracking id if one is not stored
-            if not "id" in box:
+            if box["id"] == "":
                 box["id"] = str(uuid.uuid4)
-            # calulates internal points if it is not stored
-            if not "internal_pts" in box["data"]:
+                # calulates internal points if it is not stored
                 box["internal_pts"] = geometry_utils.compute_interior_points(box, pcd)
             row_list.append({
                 "timestamp_ns": timestamps.loc[frame_num]["timestamps"],
@@ -88,6 +97,7 @@ def export_annotations(input_path, output_path):
             })
         
         frame_num += 1
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
     
     df = pd.DataFrame(row_list)
     df.to_feather(os.path.join(output_path, "annotations.feather"))
