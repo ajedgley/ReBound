@@ -82,9 +82,11 @@ def extract_frame(frame_num, input_path):
         box.translate(np.array(ego["translation"]))
 
         # Update annotation
-        ann_token = (bounding_box["id"] if bounding_box["id"] != "" else token_hex(16))
+        # use ann_token if exists, else create new token
+        ann_token = (bounding_box["data"]["ann_token"] if "ann_token" in bounding_box["data"] else token_hex(16))
         sample_token = timestamps[frame_num]
-        instance_token = (bounding_box["data"]["instance_token"] if (ann_token in sample_annotations) and (bounding_box["data"]) else token_hex(16))
+        # use instance_token if exists, else create new token
+        instance_token = (bounding_box["id"] if bounding_box["id"] != "" else token_hex(16))
         data = {}
         data["token"] = ann_token
         data["sample_token"] = sample_token
