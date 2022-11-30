@@ -9,19 +9,23 @@ import open3d as o3d
 import functools
 from functools import partial
 from nuscenes.utils.data_classes import Box
+from nuscenes.utils.geometry_utils import view_points, box_in_image, BoxVisibility
 import matplotlib.colors
 import numpy as np
 from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation
+from PIL import Image
 import random
 import os
 import sys
 import json
+import cv2
 from lct import Window
-import random
+import platform
 
 from copy import deepcopy
 
+OS_STRING = platform.system()
 ORIGIN = 0
 SIZE = 1
 ROTATION = 2
@@ -33,10 +37,13 @@ COLOR = 5
 class Annotation:
 	# returns created window with all its buttons and whatnot
 	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render,
-				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map):
-		self.cw = gui.Application.instance.create_window("LCT", 600, 525)
+				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map,
+				 image_window, image_widget, lct_path, frame_num, camera_sensors):
+		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
+		self.image_window = image_window
+		self.image_widget = image_widget
 		self.frame_extrinsic = frame_extrinsic
 		self.all_pred_annotations = annotation_types
 		self.old_boxes = deepcopy(boxes)
@@ -47,6 +54,17 @@ class Annotation:
 		self.volumes_in_scene = [] 					#current clickable cube volume objects in scene
 		self.color_map = color_map
 		self.pred_color_map = pred_color_map
+
+		self.frame_num = frame_num
+		self.camera_sensors = camera_sensors
+		self.rgb_sensor_name = self.camera_sensors[0]
+		self.lct_path = lct_path
+		self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) + ".jpg")
+		self.image = Image.open(self.image_path)
+		self.image_w = self.image.width
+		self.image_h = self.image.height
+		self.image = np.asarray(self.image)
+
 		
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
@@ -94,89 +112,115 @@ class Annotation:
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
 		layout = gui.Vert(0.50 * em, margin)
 
-		# button for adding a new bounding box
-		add_box_horiz = gui.Horiz(0.50 * em, margin)
-		add_box_button = gui.Button("Add New Bounding Box")
-		add_box_button.set_on_clicked(self.place_bounding_box)
-		add_box_horiz.add_child(add_box_button)
-
 		# buttons for saving/saving as annotation changes
+		save_annotation_vert = gui.CollapsableVert("Save")
 		save_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		save_annotation_button = gui.Button("Save Changes")
 		save_partial = functools.partial(self.save_changes_to_json, path=path)
 		save_annotation_button.set_on_clicked(save_partial)
-
+		self.save_check = 0
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
+		save_annotation_vert.add_child(save_annotation_horiz)
+
+		add_remove_vert = gui.CollapsableVert("Add/Delete")
+		add_box_button = gui.Button("Add Bounding Box")
+		add_box_button.set_on_clicked(self.place_bounding_box)
+		self.delete_annotation_button = gui.Button("Delete Bounding Box")
+		self.delete_annotation_button.set_on_clicked(self.delete_annotation)
+		add_remove_horiz = gui.Horiz(0.50 * em, margin)
+		add_remove_horiz.add_child(add_box_button)
+		add_remove_horiz.add_child(self.delete_annotation_button)
+		add_remove_vert.add_child(add_remove_horiz)
+
+		tool_vert = gui.CollapsableVert("Tools")
+		tool_status_horiz = gui.Horiz(0.50 * em, margin)
+		tool_status_horiz.add_child(gui.Label("Current Tool:"))
+		self.current_tool = gui.Label("Translation")
+		tool_status_horiz.add_child(self.current_tool)
+
+
+		toggle_operation_horiz = gui.Horiz(0.50 * em, margin)
+		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
+		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
+		toggle_operation_button.tooltip = "To use the tool, \n select a box using CTRL + Left Click, \n then hold SHIFT + Left Click to drag the box"
+		toggle_operation_horiz.add_child(toggle_operation_button)
 
 		# dropdown selector for selecting current drag mode
-		toggle_horiz = gui.Horiz(0.50 * em, margin)
-		toggle_label = gui.Label("Current Drag Mode: ")
-		toggle_axis_selector = gui.Combobox()
-		toggle_axis_selector.set_on_selection_changed(self.toggle_axis)
-		toggle_axis_selector.add_item("Horizontal")
-		toggle_axis_selector.add_item("Vertical")
-		toggle_horiz.add_child(toggle_label)
-		toggle_horiz.add_child(toggle_axis_selector)
+		self.toggle_horiz = gui.Horiz(0.50 * em, margin)
+		toggle_label = gui.Label("Current Drag Mode:")
+		self.toggle_axis_selector = gui.Combobox()
+		self.toggle_axis_selector.set_on_selection_changed(self.toggle_axis)
+		self.toggle_axis_selector.add_item("Horizontal")
+		self.toggle_axis_selector.add_item("Vertical")
+		self.toggle_horiz.add_child(toggle_label)
+		self.toggle_horiz.add_child(self.toggle_axis_selector)
 
-		toggle_operation_button = gui.Button("Toggle Translate/Rotate")
-		toggle_operation_button.toggleable = True
-		add_box_button.set_on_clicked(self.place_bounding_box)
+		tool_vert.add_child(tool_status_horiz)
+		tool_vert.add_child(toggle_operation_horiz)
+		tool_vert.add_child(self.toggle_horiz)
 
-		toggle_operation_button.set_on_clicked(self.toggle_drag_operation)
-		add_box_horiz.add_child(add_box_button)
-		add_box_horiz.add_fixed(5)
-		add_box_horiz.add_child(toggle_operation_button)
+		toggle_camera_vert = gui.CollapsableVert("Camera")
+		toggle_camera_horiz = gui.Horiz(0.50 * em, margin)
+		toggle_camera_label = gui.Label("Camera:")
+		toggle_camera_selector = gui.Combobox()
+		toggle_camera_selector.set_on_selection_changed(self.on_sensor_select)
+		for cam in self.camera_sensors:
+			toggle_camera_selector.add_item(cam)
+		toggle_camera_horiz.add_child(toggle_camera_label)
+		toggle_camera_horiz.add_child(toggle_camera_selector)
+		toggle_camera_vert.add_child(toggle_camera_horiz)
 
 		#The data for a selected box will be displayed in these fields
 		#the data fields are accessible to any function to allow easy manipulation during drag operations
-		properties_vert = gui.Vert(0.50 * em, margin)
-		trans_collapse = gui.CollapsableVert("Position", 0, margin)
-		rot_collapse = gui.CollapsableVert("Rotation", 0, margin)
-		scale_collapse = gui.CollapsableVert("Scale", 0, margin)
-		self.save_status = gui.Label("                                            ")
-		self.save_check = 0
-		self.annotation_type = gui.Label("                             ")
+		properties_vert = gui.CollapsableVert("Properties", 0.25 * em, margin)
+		trans_collapse = gui.CollapsableVert("Position")
+		rot_collapse = gui.CollapsableVert("Rotation")
+		scale_collapse = gui.CollapsableVert("Scale")
+
 		self.annotation_class = gui.Combobox()
 		self.annotation_class.set_on_selection_changed(self.label_change_handler)
 		for annotation in self.all_pred_annotations:
 			self.annotation_class.add_item(annotation)
-		add_custom_annotation_button = gui.Button("Add Custom Annotation")
-		add_custom_annotation_button.set_on_clicked(self.add_new_annotation_type)
-		self.trans_x = gui.TextEdit()
+		self.trans_x = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.trans_x.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="x"))
-		self.trans_y = gui.TextEdit()
+		self.trans_y = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.trans_y.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="y"))
-		self.trans_z = gui.TextEdit()
+		self.trans_z = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.trans_z.set_on_value_changed(partial(self.property_change_handler, prop="trans", axis="z"))
-		self.rot_x = gui.TextEdit()
+		self.rot_x = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.rot_x.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="x"))
-		self.rot_y = gui.TextEdit()
+		self.rot_y = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.rot_y.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="y"))
-		self.rot_z = gui.TextEdit()
+		self.rot_z = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.rot_z.set_on_value_changed(partial(self.property_change_handler, prop="rot", axis="z"))
-		self.scale_x = gui.TextEdit()
+		self.scale_x = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.scale_x.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="x"))
-		self.scale_y = gui.TextEdit()
+		self.scale_y = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.scale_y.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="y"))
-		self.scale_z = gui.TextEdit()
+		self.scale_z = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.scale_z.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="z"))
 		
-		annot_type = gui.Horiz()
+		annot_type = gui.Horiz(0.50 * em, margin)
 		annot_type.add_child(gui.Label("Type:"))
+		self.annotation_type = gui.Label("                       ")
 		annot_type.add_child(self.annotation_type)
-		annot_class = gui.Horiz(0.50 * em)
+		annot_class = gui.Horiz(0.50 * em, margin)
 		annot_class.add_child(gui.Label("Class:"))
 		annot_class.add_child(self.annotation_class)
-		annot_class.add_child(add_custom_annotation_button)
-		annot_vert = gui.Vert()
+		add_custom_horiz = gui.Horiz(0.50 * em, margin)
+		add_custom_annotation_button = gui.Button("Add Custom Annotation")
+		add_custom_annotation_button.set_on_clicked(self.add_new_annotation_type)
+		add_custom_horiz.add_child(add_custom_annotation_button)
+		annot_vert = gui.CollapsableVert("Annotation")
 		annot_vert.add_child(annot_type)
 		annot_vert.add_child(annot_class)
+		annot_vert.add_child(add_custom_horiz)
 		
-		trans_horiz = gui.Horiz(0.50 * em, margin)
+		trans_horiz = gui.Horiz(0.5 * em)
 		trans_horiz.add_child(gui.Label("X:"))
 		trans_horiz.add_child(self.trans_x)
 		trans_horiz.add_child(gui.Label("Y:"))
@@ -185,7 +229,7 @@ class Annotation:
 		trans_horiz.add_child(self.trans_z)
 		trans_collapse.add_child(trans_horiz)
 
-		rot_horiz = gui.Horiz(0.50 * em, margin)
+		rot_horiz = gui.Horiz(0.5 * em)
 		rot_horiz.add_child(gui.Label("X:"))
 		rot_horiz.add_child(self.rot_x)
 		rot_horiz.add_child(gui.Label("Y:"))
@@ -194,7 +238,7 @@ class Annotation:
 		rot_horiz.add_child(self.rot_z)
 		rot_collapse.add_child(rot_horiz)
 
-		scale_horiz = gui.Horiz(0.50 * em, margin)
+		scale_horiz = gui.Horiz(0.5 * em)
 		scale_horiz.add_child(gui.Label("X:"))
 		scale_horiz.add_child(self.scale_x)
 		scale_horiz.add_child(gui.Label("Y:"))
@@ -202,48 +246,25 @@ class Annotation:
 		scale_horiz.add_child(gui.Label("Z:"))
 		scale_horiz.add_child(self.scale_z)
 		scale_collapse.add_child(scale_horiz)
-		
+
 		properties_vert.add_child(annot_vert)
 		properties_vert.add_child(trans_collapse)
 		properties_vert.add_child(rot_collapse)
 		properties_vert.add_child(scale_collapse)
 
-
-		# buttons for saving/saving as annotation changes
-		save_annotation_horiz = gui.Horiz()
-		save_annotation_button = gui.Button("Save Changes")
-		save_partial = functools.partial(self.save_changes_to_json, path=path)
-		save_annotation_button.set_on_clicked(save_partial)
-		
-		save_as_button = gui.Button("Save As")
-		save_as_button.set_on_clicked(self.save_as)
-		
-		save_annotation_horiz.add_child(save_annotation_button)
-		save_annotation_horiz.add_fixed(5)
-		save_annotation_horiz.add_child(save_as_button)
-		save_annotation_horiz.add_fixed(5)
-		save_annotation_horiz.add_child(self.save_status)
-
 		# button for exiting annotation mode, set_on_click in lct.py for a cleaner restart
-		exit_annotation_horiz = gui.Horiz()
+		exit_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		exit_annotation_button = gui.Button("Exit Annotation Mode")
 		exit_annotation_button.set_on_clicked(self.exit_annotation_mode)
 		exit_annotation_horiz.add_child(exit_annotation_button)
 
-		# deletes bounding box, should only be enabled if a bounding box is selected
-		delete_annotation_horiz = gui.Horiz(0.50 * em, margin)
-		self.delete_annotation_button = gui.Button("Delete Annotation")
-		self.delete_annotation_button.set_on_clicked(self.delete_annotation)
-		delete_annotation_horiz.add_child(self.delete_annotation_button)
-
 		# adding all of the horiz to the vert, in order
-		layout.add_child(add_box_horiz)
-		layout.add_child(save_annotation_horiz)
-		layout.add_child(toggle_horiz)
+		layout.add_child(save_annotation_vert)
+		layout.add_child(add_remove_vert)
+		layout.add_child(tool_vert)
+		layout.add_child(toggle_camera_vert)
 		layout.add_child(properties_vert)
-		layout.add_child(delete_annotation_horiz)
-		
-		layout.add_fixed(10)
+
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
@@ -374,24 +395,24 @@ class Annotation:
 
 				if self.drag_operation:
 					if self.z_drag:  # if z_drag is on, translate by z axis only
-						box_to_drag.translate((0, 0, x_diff))
-						volume_to_drag.translate((0, 0, x_diff))
+						box_to_drag.translate((0, 0, x_diff/10))
+						volume_to_drag.translate((0, 0, x_diff/10))
 					else:
 						box_to_drag.translate((x_diff, y_diff, 0))
 						volume_to_drag.translate((x_diff, y_diff, 0))
 				else:
-					if self.tool_label.text == "X":
-						rotation = Quaternion(axis=[-1, 0, 0], degrees=x_diff).rotation_matrix
-						box_to_drag.rotate(rotation)
-						volume_to_drag.rotate(rotation)
-					elif self.tool_label.text == "Y":
-						rotation = Quaternion(axis=[0, -1, 0], degrees=x_diff).rotation_matrix
-						box_to_drag.rotate(rotation)
-						volume_to_drag.rotate(rotation)
-					else:
-						rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff).rotation_matrix
-						box_to_drag.rotate(rotation)
-						volume_to_drag.rotate(rotation)
+					#if self.tool_label.text == "X":
+					#	rotation = Quaternion(axis=[-1, 0, 0], degrees=x_diff).rotation_matrix
+					#	box_to_drag.rotate(rotation)
+					#	volume_to_drag.rotate(rotation)
+					#elif self.tool_label.text == "Y":
+					#	rotation = Quaternion(axis=[0, -1, 0], degrees=x_diff).rotation_matrix
+					#	box_to_drag.rotate(rotation)
+					#	volume_to_drag.rotate(rotation)
+					#else:
+					rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff).rotation_matrix
+					box_to_drag.rotate(rotation)
+					volume_to_drag.rotate(rotation)
 
 
 				self.scene_widget.scene.add_geometry(box_name, box_to_drag, self.line_mat_highlight)
@@ -402,6 +423,9 @@ class Annotation:
 				self.update_props()
 				self.scene_widget.force_redraw()
 				self.point_cloud.post_redraw()
+
+			elif event.type == gui.MouseEvent.Type.BUTTON_UP:
+				self.update_poses()
 
 			return gui.Widget.EventCallbackResult.CONSUMED
 
@@ -439,6 +463,8 @@ class Annotation:
 		self.previous_index = -1
 		self.box_selected = None
 		self.update_props()
+		self.update_poses()
+
 	#select_box takes a box name (string) and checks to see if a previous box has been selected
 	#then it modifies the appropriate line widths to select and deselect boxes
 	#it also moves the coordinate frame to the selected box
@@ -455,6 +481,7 @@ class Annotation:
 		self.scene_widget.scene.add_geometry("coord_frame", frame, self.coord_frame_mat, True)
 		self.scene_widget.force_redraw()
 		self.update_props()
+		self.update_poses()
 
 	#This method adds cube mesh volumes to preexisting bounding boxes
 	#Adds an initial coordinate frame to the scene
@@ -492,7 +519,7 @@ class Annotation:
 		if not enabled:
 			boxes[0].selected_index = 0
 			for i in range(1,10):
-				boxes[i].text_value = ""
+				boxes[i].double_value = 0
 			self.cw.post_redraw()
 			return -1
 
@@ -532,23 +559,19 @@ class Annotation:
 		box_rotate = list(box_object.R)
 		r = Rotation.from_matrix(box_rotate)
 		euler_rotations = r.as_euler("xyz", False)
-		#box_rotate_axis variables are calculated in radians
-		#box_rotate_x = math.atan2(box_rotate[2][1], box_rotate[2][2])
-		#box_rotate_y = math.atan2((-1 * box_rotate[2][0]), math.sqrt((box_rotate[0][0] ** 2) + (box_rotate[1][0] ** 2)))
-		#box_rotate_z = math.atan2(box_rotate[1][0], box_rotate[0][0])
 		box_scale = box_object.extent
 
-		self.trans_x.text_value = "{:.3f}".format(box_center[0])
-		self.trans_y.text_value = "{:.3f}".format(box_center[1])
-		self.trans_z.text_value = "{:.3f}".format(box_center[2])
+		self.trans_x.double_value = box_center[0]
+		self.trans_y.double_value = box_center[1]
+		self.trans_z.double_value = box_center[2]
 
-		self.rot_x.text_value = "{:.3f}".format(math.degrees(euler_rotations[0]))
-		self.rot_y.text_value = "{:.3f}".format(math.degrees(euler_rotations[1]))
-		self.rot_z.text_value = "{:.3f}".format(math.degrees(euler_rotations[2]))
+		self.rot_x.double_value = math.degrees(euler_rotations[0])
+		self.rot_y.double_value = math.degrees(euler_rotations[1])
+		self.rot_z.double_value = math.degrees(euler_rotations[2])
 
-		self.scale_x.text_value = "{:.3f}".format(box_scale[0])
-		self.scale_y.text_value = "{:.3f}".format(box_scale[1])
-		self.scale_z.text_value = "{:.3f}".format(box_scale[2])
+		self.scale_x.double_value = box_scale[0]
+		self.scale_y.double_value = box_scale[1]
+		self.scale_z.double_value = box_scale[2]
 
 		#updates array of all properties to allow referencing previous values
 		self.box_props_selected = [
@@ -580,6 +603,8 @@ class Annotation:
 		elif prop == "scale":
 			self.scale_box(axis, value_as_float)
 
+		self.update_poses()
+
 	# on label change, changes temp_boxes value and color of current box
 	def label_change_handler(self, label, pos):
 		self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
@@ -599,6 +624,7 @@ class Annotation:
 		self.scene_widget.scene.add_geometry(box_name, current_box, self.line_mat_highlight)
 
 		self.point_cloud.post_redraw()
+		self.update_poses()
 
 	#used by property fields to move box along specified axis to new position -> value
 	def translate_box(self, axis, value):
@@ -759,8 +785,127 @@ class Annotation:
 			self.z_drag = True
 
 	def toggle_drag_operation(self):
+		if self.drag_operation == True:
+			self.current_tool.text = "Rotation"
+		else:
+			self.current_tool.text = "Translation"
+		self.toggle_horiz.visible = not self.toggle_horiz.visible
 		self.drag_operation = not self.drag_operation
 
+		self.cw.post_redraw()
+
+	#adapted from lct method, credit to Nicholas Revilla
+	def update_image(self):
+		"""Fetches new image from LVT Directory, and draws it onto a plt figure
+           Uses nuScenes API to project 3D bounding boxes onto that plt figure
+           Finally, extracts raw image data from plt figure and updates our image widget
+            Args:
+                self: window object
+            Returns:
+                None
+                """
+		# Extract new image from file
+		self.image = np.asarray(Image.open(self.image_path))
+
+		for b in self.temp_boxes["boxes"]:
+			box = Box(b["origin"], b["size"], Quaternion(b["rotation"]), name=b["annotation"], score=b["confidence"],
+					  velocity=(0, 0, 0))
+			color = self.pred_color_map[b["annotation"]]
+
+			# Box is stored in vehicle frame, so transform it to RGB sensor frame
+			box.translate(-np.array(self.image_extrinsic['translation']))
+			box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
+			curr_index = self.temp_boxes["boxes"].index(b)
+			line_weight = 2
+			# Thank you to Oscar Beijbom for providing this box rendering algorithm at https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
+			if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h),
+							BoxVisibility.ANY):
+				# If the box is in view, then render it onto the PLT frame
+				corners = view_points(box.corners(), np.asarray(self.image_intrinsic['matrix']), normalize=True)[:2, :]
+
+				# If the box is in view and it is the currently selected box, highlight it
+				if curr_index == self.previous_index:
+						line_weight = 10
+				else:
+						line_weight = 2
+
+				def draw_rect(selected_corners, c):
+					prev = selected_corners[-1]
+					for corner in selected_corners:
+						cv2.line(self.image,
+								 (int(prev[0]), int(prev[1])),
+								 (int(corner[0]), int(corner[1])),
+								 c, line_weight)
+						prev = corner
+
+				# Draw the sides
+				for i in range(4):
+					cv2.line(self.image,
+							 (int(corners.T[i][0]), int(corners.T[i][1])),
+							 (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+							 color, line_weight)
+
+				# Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
+				draw_rect(corners.T[:4], color)
+				draw_rect(corners.T[4:], color)
+
+				# Draw line indicating the front
+				center_bottom_forward = np.mean(corners.T[2:4], axis=0)
+				center_bottom = np.mean(corners.T[[2, 3, 7, 6]], axis=0)
+				cv2.line(self.image,
+						 (int(center_bottom[0]), int(center_bottom[1])),
+						 (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
+						 color, line_weight)
+
+				# Only render confidence if this isnt at GT box
+				if b["confidence"] < 100 and self.show_score:
+					cv2.putText(self.image, str(b["confidence"]), (int(corners.T[0][0]), int(corners.T[1][1])),
+								cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+		new_image = o3d.geometry.Image(self.image)
+		self.image_widget.update_image(new_image)
+
+		# Force image widget to redraw
+		# Post Redraw calls seem to crash the app on windows. Temporary workaround
+		self.image_window.post_redraw()
+
+	def on_sensor_select(self, new_val, new_idx):
+		"""This updates the name of the selected rgb sensor after user input
+           Updates the window with the new information
+            Args:
+                self: window object
+                new_val: new name of the rgb sensor
+                new_inx:
+            Returns:
+                None
+                """
+		self.rgb_sensor_name = new_val
+		self.update_image_path()
+
+	def update_poses(self):
+		"""Extracts all the pose data when switching sensors, and or frames
+            Args:
+                self: window object
+            Returns:
+                None
+                """
+		# Pulling intrinsic and extrinsic data from LVT directory based on current selected frame and sensor
+		self.image_intrinsic = json.load(
+			open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "intrinsics.json")))
+		self.image_extrinsic = json.load(
+			open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "extrinsics.json")))
+		self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
+		self.update_image()
+
+	def update_image_path(self):
+		"""This updates the image path based on current rgb sensor name and frame number
+            Args:
+                self: window object
+            Returns:
+                None
+                """
+		self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) + ".jpg")
+		self.update_poses()
 
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
@@ -783,6 +928,7 @@ class Annotation:
 			self.previous_index = -1
 			self.box_selected = None
 			self.update_props()
+			self.update_poses()
 
 	# creates popup allowing user to add new annotation type
 	def add_new_annotation_type(self):
@@ -827,21 +973,20 @@ class Annotation:
 
 	# overwrites currently open file with temp_boxes
 	def save_changes_to_json(self, path):
-		self.save_status.text = "Changes saved."
 		self.save_check = 1
 		self.cw.close_dialog()
 		with open(path, "w") as outfile:
 			outfile.write(json.dumps(self.temp_boxes))
 
 	def save_as(self):
-		# pops open one of those nifty file browsers to let user select place to save
+		# opens a file browser to let user select place to save
 		file_dialog = gui.FileDialog(gui.FileDialog.SAVE, "Choose file to save", self.cw.theme)
 		file_dialog.add_filter(".json", "JSON file (.json)")
 		file_dialog.set_on_cancel(self.cw.close_dialog)
 		file_dialog.set_on_done(self.save_changes_to_json)
 		self.cw.show_dialog(file_dialog)
 
-	# basically just restarts the program in order to exit
+	# restarts the program in order to exit
 	def exit_annotation_mode(self):
 		if (self.save_check == 0 and self.temp_boxes != self.old_boxes):
 			dialog = gui.Dialog("Confirm Exit")
