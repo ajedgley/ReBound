@@ -23,6 +23,16 @@ import open3d as o3d
 import google.protobuf
 from google.protobuf.json_format import MessageToDict
 
+#Name of all LiDAR sensors
+Lidar_Name = {
+    0:"UNKNOWN",
+    1:"TOP",
+    2:"FRONT",
+    3:"SIDE_LEFT",
+    4:"SIDE_RIGHT",
+    5:"REAR"
+}
+
 # This should be fine for now
 def parse_options():
     ''' Read in user command line input to get directory paths which will be used for input and output.
@@ -76,12 +86,31 @@ def clear_labels(labels):
 def extract_bounding(frame, frame_num, input_path):
     annotations = json.load(open(input_path + "/bounding/" + str(frame_num) + "/boxes.json"))
 
-
+    # Keeps everything in old frame except annotations
     new_laser_labels = clear_labels(frame.laser_labels)
 
+    
+    # Load pointcloud points
+    pcd1 = o3d.io.read_point_cloud(input_path + "pointcloud/FRONT/" + str(frame_num) + ".pcd").points
+    pcd2 = o3d.io.read_point_cloud(input_path + "pointcloud/REAR/" + str(frame_num) + ".pcd").points
+    pcd3 = o3d.io.read_point_cloud(input_path + "pointcloud/SIDE_LEFT/" + str(frame_num) + ".pcd").points 
+    pcd4 = o3d.io.read_point_cloud(input_path + "pointcloud/SIDE_RIGHT/" + str(frame_num) + ".pcd").points 
+    pcd5 = o3d.io.read_point_cloud(input_path + "pointcloud/TOP/" + str(frame_num) + ".pcd").points     
+    
     for box in annotations["boxes"]:
 
-        #construct new laser labels (this doesn't match up with for label in frame.label_laser HELP)
+        # assign a new random tracking id if one is not stored
+        if not "id" in box["data"]:
+            box["data"]["id"] = str(uuid.uuid4)
+        # calulates internal points if it is not stored
+        if not "num_lidar_points_in_box" in box["data"]:
+            box["data"]["num_lidar_points_in_box"] = geometry_utils.compute_interior_points(box, pcd1) \
+                + geometry_utils.compute_interior_points(box, pcd2) \
+                + geometry_utils.compute_interior_points(box, pcd3) \
+                + geometry_utils.compute_interior_points(box, pcd4) \
+                + geometry_utils.compute_interior_points(box, pcd5) 
+
+        #construct new laser labels
         new_label = open_label.Label()
 
         # constructs a new box, heading may be wrong
@@ -96,10 +125,10 @@ def extract_bounding(frame, frame_num, input_path):
         new_box.heading = quat.radians
 
         new_metadata = open_label.Label.Metadata()
-        new_metadata.speed_x = 0
-        new_metadata.speed_y = 0
-        new_metadata.accel_x = 0
-        new_metadata.accel_y = 0
+        new_metadata.speed_x = box["data"]["speed_x"]
+        new_metadata.speed_y = box["data"]["speed_y"]
+        new_metadata.accel_x = box["data"]["accel_x"]
+        new_metadata.accel_y = box["data"]["accel_y"]
 
         new_label.box.CopyFrom(new_box)
         new_label.metadata.CopyFrom(new_metadata)
@@ -117,8 +146,8 @@ def extract_bounding(frame, frame_num, input_path):
         
         new_label.type = new_type
        
-        new_label.id = "0000000000000000000000"
-        new_label.num_lidar_points_in_box = 0
+        new_label.id = box["data"]["id"]
+        new_label.num_lidar_points_in_box = box["data"]["num_lidar_points_in_box"]
 
         fp1 = open("label.txt", "w")
         fp1.write(repr(new_label))
@@ -126,12 +155,6 @@ def extract_bounding(frame, frame_num, input_path):
 
     return frame
         
-        
-
-
-
-
-
 def count_frames(dataset):
     """counts frames in dataset to use for progress bar
     Args:
@@ -145,28 +168,32 @@ def count_frames(dataset):
         frame_count += 1
     return frame_count
 
+
 if __name__ == "__main__":
     (original_path, input_path, output_path, scene_names) = parse_options()
 
     dataset = tf.data.TFRecordDataset(original_path)
-
+    
     writer = tf.io.TFRecordWriter(output_path)
+
+
+    frame_count = count_frames(dataset)
+
+    # Reads each frame of the old dataset
     for frame_num, data in enumerate(dataset):
+        # Reads in old frame
         frame = open_dataset.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
-        
-        #returns a new frame with edited annotations
 
+        #returns a new frame with edited annotations
         newframe = extract_bounding(frame, frame_num, input_path)
 
-        #print("uhhh", newframe)
-        # do I need to set this?s
         output = newframe.SerializeToString()
-        #AHAHAHAH THIS IS THE IMPORATNT PART
+
         writer.write(output)
 
-        #dataset = tf.data.TFRecordDataset("/home/royce/Documents/CMSC435/LVT/waymo/idk.tfrecord")
-        #print(repr(dataset))
-        # remove this later, easier for testing (one frame)
+        dataformat_utils.print_progress_bar(frame_num, frame_count)
+
+
 
 

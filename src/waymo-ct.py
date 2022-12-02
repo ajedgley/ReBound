@@ -97,6 +97,12 @@ def extract_bounding(frame, frame_num, lct_path):
     annotation_names = []
     annotation_dict = {1: "Vehicle", 2: "Pedestrian", 3: "Sign", 4:"Cyclist"}
     confidences = []
+    ids = []
+    num_lidar_points_in_box = []
+    speed_x = []
+    speed_y = []
+    accel_x = []
+    accel_y = []
 
     # Get annotation, rotation, confidence level, quaternion, center, and diminensions of each bounding box in frame
     for label in frame.laser_labels:
@@ -107,7 +113,14 @@ def extract_bounding(frame, frame_num, lct_path):
         rotations.append(quat.q.tolist())
         # Confidence set to 100 by default for ground truth data
         confidences.append(100)
-    dataformat_utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences)
+
+        ids.append(label.id)
+        num_lidar_points_in_box.append(label.num_lidar_points_in_box)
+        speed_x.append(label.metadata.speed_x)
+        speed_y.append(label.metadata.speed_y)
+        accel_x.append(label.metadata.accel_x)
+        accel_y.append(label.metadata.accel_y)
+    dataformat_utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences, False, data = {"id":ids, "num_lidar_points_in_box":num_lidar_points_in_box,"speed_x":speed_x, "speed_y":speed_y,"accel_x":accel_x,"accel_y":accel_y})
 
 def setup_rgb(frame, lct_path):
     """Sets up the RGB directory with extrinsic data
