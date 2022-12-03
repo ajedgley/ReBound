@@ -74,18 +74,18 @@ class Annotation:
 		self.box_count = 0
 
 		#common materials
-		self.transparent_mat = rendering.MaterialRecord() #invisible material for box volumes
+		self.transparent_mat = rendering.Material() #invisible material for box volumes
 		self.transparent_mat.shader = "defaultLitTransparency"
 		self.transparent_mat.base_color = (0.0, 0.0, 0.0, 0.0)
 
-		self.line_mat_highlight = rendering.MaterialRecord()
+		self.line_mat_highlight = rendering.Material()
 		self.line_mat_highlight.shader = "unlitLine"
 
-		self.line_mat = rendering.MaterialRecord()
+		self.line_mat = rendering.Material()
 		self.line_mat.shader = "unlitLine"
 		self.line_mat.line_width = 0.25
 
-		self.coord_frame_mat = rendering.MaterialRecord()
+		self.coord_frame_mat = rendering.Material()
 		self.coord_frame_mat.shader = "defaultUnlit"
 
 		self.coord_frame = "coord_frame"
@@ -645,9 +645,9 @@ class Annotation:
 
 		# changes color of box based on label selection
 		new_color = None
-		if label in self.color_map.keys() and box_data["confidence"] == 101:
+		if label in self.color_map and box_data["confidence"] == 101:
 			new_color = self.pred_color_map[label]
-		elif label in self.pred_color_map():
+		elif label in self.pred_color_map:
 			new_color = self.pred_color_map[label]
 
 		new_color = tuple(x/255 for x in new_color)
@@ -983,11 +983,14 @@ class Annotation:
 	# creates popup allowing user to add new annotation type
 	def add_new_annotation_type(self):
 		dialog = gui.Dialog("Create New Annotation")
-		layout = gui.Vert(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
+		em = self.cw.theme.font_size
+		margin = gui.Margins(1* em, 1 * em, 1 * em, 1 * em)
+		layout = gui.Vert(0, margin)
+		button_layout = gui.Horiz()
 
 		text_box_horiz = gui.Horiz()
 		self.text_box = gui.TextEdit()
-		self.text_box.placeholder_text = "New Annotation Name"
+		self.text_box.placeholder_text = "New Label"
 		text_box_horiz.add_child(self.text_box)
 
 		buttons_horiz = gui.Horiz(0.50, gui.Margins(0.50, 0.25, 0.50, 0.25))
@@ -997,9 +1000,11 @@ class Annotation:
 		cancel_button.set_on_clicked(self.cw.close_dialog)
 
 		buttons_horiz.add_child(submit_button)
+		buttons_horiz.add_fixed(5)
 		buttons_horiz.add_child(cancel_button)
 
 		layout.add_child(text_box_horiz)
+		layout.add_fixed(10)
 		layout.add_child(buttons_horiz)
 		dialog.add_child(layout)
 		self.cw.show_dialog(dialog)
