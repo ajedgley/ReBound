@@ -303,7 +303,7 @@ class Annotation:
 		vol_size = [bbox_params[1][1], bbox_params[1][0], bbox_params[1][2]]
 		vol_params = [origin, vol_size, qtr.rotation_matrix]
 		bounding_box = o3d.geometry.OrientedBoundingBox(origin, qtr.rotation_matrix, size) #Creates bounding box object
-		color = self.color_map[self.all_pred_annotations[0]]
+		color = self.pred_color_map[self.all_pred_annotations[0]]
 		hex = '#%02x%02x%02x' % color
 		bounding_box.color = matplotlib.colors.to_rgb(hex) #will select color from annotation type list
 		bbox_name = "bbox_" + str(self.box_count)
@@ -646,7 +646,7 @@ class Annotation:
 		# changes color of box based on label selection
 		new_color = None
 		if label in self.color_map.keys() and box_data["confidence"] == 101:
-			new_color = self.color_map[label]
+			new_color = self.pred_color_map[label]
 		elif label in self.pred_color_map():
 			new_color = self.pred_color_map[label]
 
