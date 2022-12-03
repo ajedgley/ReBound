@@ -96,6 +96,7 @@ class Annotation:
 		self.curr_x = 0.0 #used for initial mouse position in drags
 		self.curr_y = 0.0
 		self.ctrl_is_down = False
+		self.nudge_sensitivity = 1.0
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
@@ -289,33 +290,30 @@ class Annotation:
 	def place_bounding_box(self):
 		# Random values are placeholders until we implement the desired values
 		qtr = Quaternion(axis=(1.0,0.0,0.0), degrees=0) #Randomized rotation of box
-		#origin = (self.scene_widget.center_of_rotation[0], self.scene_widget.center_of_rotation[1], self.get_depth_average())
 		origin = self.get_center_of_rotation()
 		size = [random.randint(1,5),random.randint(1,5),random.randint(1,5)] #Random dimensions of box
 		bbox_params = [origin, size, qtr.rotation_matrix] #create_volume uses box meta data to create mesh
-
-		mat = rendering.MaterialRecord()
-		mat.shader = "unlitLine"
-		mat.line_width = 0.25
-
+		vol_size = [bbox_params[1][1], bbox_params[1][0], bbox_params[1][2]]
+		vol_params = [origin, vol_size, qtr.rotation_matrix]
 		bounding_box = o3d.geometry.OrientedBoundingBox(origin, qtr.rotation_matrix, size) #Creates bounding box object
-		bounding_box.color = matplotlib.colors.to_rgb((0.0,1.0,0)) #will select color from annotation type list
+		color = self.color_map[self.all_pred_annotations[0]]
+		hex = '#%02x%02x%02x' % color
+		bounding_box.color = matplotlib.colors.to_rgb(hex) #will select color from annotation type list
 		bbox_name = "bbox_" + str(self.box_count)
 		self.box_indices.append(bbox_name)
 		self.boxes_in_scene.append(bounding_box)
 
-		volume_to_add = self.add_volume(bbox_params)
+		volume_to_add = self.add_volume(vol_params)
 		volume_name = "volume_" + str(self.box_count)
 		self.volume_indices.append(volume_name)
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		box_object_data = self.create_box_metadata(origin, size, qtr.elements, "UNKNOWN", 101, {})
+		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, {})
 		self.temp_boxes['boxes'].append(box_object_data)
-		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, mat) #Adds the box to the scene
+		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
-		self.select_box(self.box_count) #make the new box the currently selected box
 
 		self.point_cloud.post_redraw()
 		self.cw.post_redraw()
@@ -401,15 +399,6 @@ class Annotation:
 						box_to_drag.translate((x_diff, y_diff, 0))
 						volume_to_drag.translate((x_diff, y_diff, 0))
 				else:
-					#if self.tool_label.text == "X":
-					#	rotation = Quaternion(axis=[-1, 0, 0], degrees=x_diff).rotation_matrix
-					#	box_to_drag.rotate(rotation)
-					#	volume_to_drag.rotate(rotation)
-					#elif self.tool_label.text == "Y":
-					#	rotation = Quaternion(axis=[0, -1, 0], degrees=x_diff).rotation_matrix
-					#	box_to_drag.rotate(rotation)
-					#	volume_to_drag.rotate(rotation)
-					#else:
 					rotation = Quaternion(axis=[0, 0, -1], degrees=x_diff).rotation_matrix
 					box_to_drag.rotate(rotation)
 					volume_to_drag.rotate(rotation)
@@ -443,13 +432,45 @@ class Annotation:
 				self.ctrl_is_down = False
 			return gui.Widget.EventCallbackResult.HANDLED
 
-		elif event.key == 127 and event.type == event.Type.DOWN:
-			self.delete_annotation()
-			return gui.Widget.EventCallbackResult.CONSUMED
+		elif event.type == event.Type.DOWN:
 
-		elif event.key == 100 and event.type == event.Type.DOWN and self.ctrl_is_down:
-			self.deselect_box()
-			return gui.Widget.EventCallbackResult.CONSUMED
+			if event.key == 127:
+				self.delete_annotation()
+				return gui.Widget.EventCallbackResult.CONSUMED
+			elif event.key == 100 and self.ctrl_is_down:
+				self.deselect_box()
+				return gui.Widget.EventCallbackResult.CONSUMED
+			elif self.previous_index != -1:
+				if event.key == 119:
+					z_location = self.box_props_selected[2] + self.nudge_sensitivity
+					self.property_change_handler(z_location, "trans", "z")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 115:
+					z_location = self.box_props_selected[2] + (-1 * self.nudge_sensitivity)
+					self.property_change_handler(z_location, "trans", "z")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 97:
+					self.property_change_handler(self.nudge_sensitivity, "rot", "z")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 100:
+					self.property_change_handler(-1 * self.nudge_sensitivity, "rot", "z")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 265:
+					y_location = self.box_props_selected[1] + self.nudge_sensitivity
+					self.property_change_handler(y_location, "trans", "y")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 266:
+					y_location = self.box_props_selected[1] + (-1 * self.nudge_sensitivity)
+					self.property_change_handler(y_location, "trans", "y")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 263:
+					x_location = self.box_props_selected[0] + self.nudge_sensitivity
+					self.property_change_handler(x_location, "trans", "x")
+					return gui.Widget.EventCallbackResult.CONSUMED
+				elif event.key == 264:
+					x_location = self.box_props_selected[0] + (-1 * self.nudge_sensitivity)
+					self.property_change_handler(x_location, "trans", "x")
+					return gui.Widget.EventCallbackResult.CONSUMED
 
 		return gui.Widget.EventCallbackResult.IGNORED
 	#deselect_box removes current properties, un-highlights box, and sets selected box back to -1
@@ -587,7 +608,9 @@ class Annotation:
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 		result = Quaternion(matrix=box_to_rotate.R)
 		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, self.temp_boxes["boxes"][self.previous_index]["annotation"], 101, {})
+		current_temp_box = self.temp_boxes["boxes"][self.previous_index]
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements,
+														current_temp_box["annotation"], current_temp_box["confidence"], {})
 		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
@@ -610,14 +633,15 @@ class Annotation:
 		self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
 		current_box = self.boxes_in_scene[self.previous_index]
 		box_name = self.box_indices[self.previous_index]
+		box_data = self.temp_boxes["boxes"][self.previous_index]
 		self.scene_widget.scene.remove_geometry(box_name)
 
 		# changes color of box based on label selection
 		new_color = None
-		if label in self.color_map.keys():
+		if label in self.color_map.keys() and box_data["confidence"] == 101:
 			new_color = self.color_map[label]
 		elif label in self.pred_color_map():
-			new_color = self.color_map[label]
+			new_color = self.pred_color_map[label]
 
 		new_color = tuple(x/255 for x in new_color)
 		current_box.color = new_color
@@ -717,10 +741,10 @@ class Annotation:
 			volume_to_drag = self.add_volume([trans, (scale[1], scale[0], scale[2]), qrt])
 
 		elif axis == "y":
-
 			scale = [self.box_props_selected[6], value, self.box_props_selected[8]]
 			box_to_drag.extent = scale
 			volume_to_drag = self.add_volume([trans, (scale[1], scale[0], scale[2]), qrt])
+
 		else:
 			scale = [self.box_props_selected[6], self.box_props_selected[7], value]
 			box_to_drag.extent = scale
@@ -869,6 +893,24 @@ class Annotation:
 		# Post Redraw calls seem to crash the app on windows. Temporary workaround
 		self.image_window.post_redraw()
 
+	def update_cam_pos_pcd(self):
+
+		self.scene_widget.scene.remove_geometry("RGB Line")
+		# Add Line that indicates current RGB Camera View
+		line = o3d.geometry.LineSet()
+		line.points = o3d.utility.Vector3dVector([[0, 0, 0], [0, 0, 2]])
+		line.lines = o3d.utility.Vector2iVector([[0, 1]])
+		line.colors = o3d.utility.Vector3dVector([[1.0, 0, 0]])
+
+		line.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0, 0, 0])
+		line.translate(self.image_extrinsic['translation'])
+
+		line.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0, 0, 0])
+		line.translate(self.frame_extrinsic['translation'])
+
+		self.scene_widget.scene.add_geometry("RGB Line", line, self.line_mat)
+		self.point_cloud.post_redraw()
+
 	def on_sensor_select(self, new_val, new_idx):
 		"""This updates the name of the selected rgb sensor after user input
            Updates the window with the new information
@@ -896,6 +938,7 @@ class Annotation:
 			open(os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, "extrinsics.json")))
 		self.frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num) + ".json")))
 		self.update_image()
+		self.update_cam_pos_pcd()
 
 	def update_image_path(self):
 		"""This updates the image path based on current rgb sensor name and frame number
@@ -961,7 +1004,10 @@ class Annotation:
 			return 0
 		self.annotation_class.add_item(self.text_box.text_value)
 		self.new_annotation_types.append(self.text_box.text_value)
-		self.color_map[self.text_box.text_value] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+		color_to_add = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+		self.color_map[self.text_box.text_value] = color_to_add
+		self.pred_color_map[self.text_box.text_value] = color_to_add
 
 		self.annotation_class.selected_index = self.annotation_class.number_of_items - 1
 
@@ -1016,6 +1062,7 @@ class Annotation:
 		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
 		Window(sys.argv[2])
 		self.point_cloud.close()
+		self.image_window.close()
 		self.cw.close()
 
 	# getters and setters below
