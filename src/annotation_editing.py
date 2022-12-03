@@ -270,7 +270,7 @@ class Annotation:
 
 		self.cw.add_child(layout)
 		self.update_props()
-
+		self.update_poses()
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
@@ -282,9 +282,16 @@ class Annotation:
 
 	#helper function to place new boxes at the direct camera origin at the depth average
 	def get_center_of_rotation(self):
-		view_matrix = self.scene_widget.scene.camera.get_view_matrix()
-		inverse = np.linalg.inv(view_matrix)
-		return (inverse[0][3], inverse[1][3], self.average_depth)
+		#view_matrix = self.scene_widget.scene.camera.get_view_matrix()
+		#inverse = np.linalg.inv(view_matrix)
+		#return (inverse[0][3], inverse[1][3], self.average_depth)
+		R = Quaternion(scalar=1.0, vector=[0.0, 0.0, 0.0]).rotation_matrix
+		box = o3d.geometry.OrientedBoundingBox([0.0, 0.0, 0.0], R, [0.0, 0.0, 0.0])
+		box.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0, 0, 0])
+		box.translate(self.image_extrinsic['translation'])
+		box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0, 0, 0])
+		box.translate(self.frame_extrinsic['translation'])
+		return box.get_center()
 
 	# onclick, places down a bounding box on the cursor, then reenables mouse functionality
 	def place_bounding_box(self):
@@ -802,7 +809,7 @@ class Annotation:
 		}
 
 	#sets horizontal or vertical drag
-	def toggle_axis(self, option, index):
+	def toggle_axis(self, index):
 		if index == 0:
 			self.z_drag = False
 		else:
