@@ -809,7 +809,7 @@ class Annotation:
 		}
 
 	#sets horizontal or vertical drag
-	def toggle_axis(self, index):
+	def toggle_axis(self, index, opt_name):
 		if index == 0:
 			self.z_drag = False
 		else:
