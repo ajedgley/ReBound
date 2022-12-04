@@ -316,7 +316,7 @@ class Annotation:
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, {})
+		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, "", 0, {})
 		self.temp_boxes['boxes'].append(box_object_data)
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
@@ -616,8 +616,7 @@ class Annotation:
 		result = Quaternion(matrix=box_to_rotate.R)
 		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
 		current_temp_box = self.temp_boxes["boxes"][self.previous_index]
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements,
-														current_temp_box["annotation"], current_temp_box["confidence"], {})
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {})
 		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
@@ -791,7 +790,7 @@ class Annotation:
 
 	#Extracts the current data for a selected bounding box
 	#returns it as a json object for use in save and export functions
-	def create_box_metadata(self, origin, size, rotation, label, confidence, data):
+	def create_box_metadata(self, origin, size, rotation, label, confidence, ids, internal_pts, data):
 		if isinstance(origin, np.ndarray):
 			origin = origin.tolist()
 		if isinstance(size, np.ndarray):
@@ -805,6 +804,8 @@ class Annotation:
 			"rotation": rotation,
 			"annotation": label,
 			"confidence": confidence,
+			"ids": ids,
+			"internal_pts": internal_pts,
 			"data": data
 		}
 
