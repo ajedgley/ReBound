@@ -24,7 +24,7 @@ Our app aims to provide researchers with the necessary tools to easily visualize
 
 
 
-### Docs: [GitBook](https://nicolas-revilla.gitbook.io/lvt/)
+### Docs: [GitBook](https://umd-cmsc435-lidar-students.gitbook.io/lvt/)
 
 
 
