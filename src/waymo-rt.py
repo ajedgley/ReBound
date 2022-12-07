@@ -114,10 +114,18 @@ def extract_bounding(frame, frame_num, input_path):
 
         # constructs metadata for the box
         new_metadata = open_label.Label.Metadata()
-        new_metadata.speed_x = box["data"]["speed_x"]
-        new_metadata.speed_y = box["data"]["speed_y"]
-        new_metadata.accel_x = box["data"]["accel_x"]
-        new_metadata.accel_y = box["data"]["accel_y"]
+        
+        # if box data unitialized, set to 0's, otherwise fill in metadata
+        if box["data"] == {}:
+            new_metadata.speed_x = 0
+            new_metadata.speed_y = 0
+            new_metadata.accel_x = 0
+            new_metadata.accel_y = 0
+        else:
+            new_metadata.speed_x = box["data"]["speed_x"]
+            new_metadata.speed_y = box["data"]["speed_y"]
+            new_metadata.accel_x = box["data"]["accel_x"]
+            new_metadata.accel_y = box["data"]["accel_y"]
 
         # Copy values into new box
         new_label.box.CopyFrom(new_box)
