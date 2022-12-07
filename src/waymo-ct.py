@@ -120,7 +120,7 @@ def extract_bounding(frame, frame_num, lct_path):
         speed_y.append(label.metadata.speed_y)
         accel_x.append(label.metadata.accel_x)
         accel_y.append(label.metadata.accel_y)
-    dataformat_utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences, False, data = {"id":ids, "num_lidar_points_in_box":num_lidar_points_in_box,"speed_x":speed_x, "speed_y":speed_y,"accel_x":accel_x,"accel_y":accel_y})
+    dataformat_utils.create_frame_bounding_directory(lct_path, frame_num, origins, sizes, rotations, annotation_names, confidences, ids, num_lidar_points_in_box, False, data = {"speed_x":speed_x, "speed_y":speed_y,"accel_x":accel_x,"accel_y":accel_y})
 
 def setup_rgb(frame, lct_path):
     """Sets up the RGB directory with extrinsic data
