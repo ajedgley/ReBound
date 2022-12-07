@@ -804,7 +804,7 @@ class Annotation:
 			"rotation": rotation,
 			"annotation": label,
 			"confidence": confidence,
-			"ids": ids,
+			"id": ids,
 			"internal_pts": internal_pts,
 			"data": data
 		}
