@@ -248,6 +248,9 @@ def count_frames(dataset):
     return frame_count
 
 def convert_dataset(output_path, dataset):
+    # Add metadata
+    dataformat_utils.add_metadata(output_path, 'waymo', ['timestamps.json'])
+
     # Initialize LiDAR camera dictionaries
     translations = {}
     rotations = {}
