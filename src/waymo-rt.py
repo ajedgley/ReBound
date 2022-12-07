@@ -23,17 +23,7 @@ import open3d as o3d
 import google.protobuf
 from google.protobuf.json_format import MessageToDict
 
-#Name of all LiDAR sensors
-Lidar_Name = {
-    0:"UNKNOWN",
-    1:"TOP",
-    2:"FRONT",
-    3:"SIDE_LEFT",
-    4:"SIDE_RIGHT",
-    5:"REAR"
-}
-
-# This should be fine for now
+# Parses command line for file/directory paths
 def parse_options():
     ''' Read in user command line input to get directory paths which will be used for input and output.
     Args:
@@ -56,8 +46,8 @@ def parse_options():
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             print("REQUIRED: -f to specify the path to the LVT file.")
-            print("REQUIRED: -o to specify the path to the argoverse file.")
-            print("REQUIRED: -v to specify the path to the original file.")
+            print("REQUIRED: -o to specify the path to the argoverse tfrecord file.")
+            print("REQUIRED: -v to specify the path to the original tfrecord file.")
             sys.exit(2)
         elif opt == "-f":
             input_path = arg
@@ -74,14 +64,14 @@ def parse_options():
 
     return (original_path, input_path, output_path, scene_names)
 
-
+# Clears all the laser_labels in the current frame
 def clear_labels(labels):
-        a = 0
-        for label in labels:
-            a+=1
-        for i in range(0, a):
-            labels.pop()
-        return labels
+    a = 0
+    for label in labels:
+        a+=1
+    for i in range(0, a):
+        labels.pop()
+    return labels
 
 def extract_bounding(frame, frame_num, input_path):
     annotations = json.load(open(input_path + "/bounding/" + str(frame_num) + "/boxes.json"))
@@ -98,13 +88,11 @@ def extract_bounding(frame, frame_num, input_path):
     pcd5 = o3d.io.read_point_cloud(input_path + "pointcloud/TOP/" + str(frame_num) + ".pcd").points     
     
     for box in annotations["boxes"]:
-
         # assign a new random tracking id if one is not stored
-        if not "id" in box["data"]:
-            box["data"]["id"] = str(uuid.uuid4)
+        if box["id"] == "":
+            box["id"] = str(uuid.uuid4)
         # calulates internal points if it is not stored
-        if not "num_lidar_points_in_box" in box["data"]:
-            box["data"]["num_lidar_points_in_box"] = geometry_utils.compute_interior_points(box, pcd1) \
+            box["internal_pts"] = geometry_utils.compute_interior_points(box, pcd1) \
                 + geometry_utils.compute_interior_points(box, pcd2) \
                 + geometry_utils.compute_interior_points(box, pcd3) \
                 + geometry_utils.compute_interior_points(box, pcd4) \
@@ -113,7 +101,7 @@ def extract_bounding(frame, frame_num, input_path):
         #construct new laser labels
         new_label = open_label.Label()
 
-        # constructs a new box, heading may be wrong
+        # constructs a new box
         new_box = open_label.Label.Box()
         new_box.center_x = box["origin"][0]
         new_box.center_y = box["origin"][1]
@@ -124,15 +112,18 @@ def extract_bounding(frame, frame_num, input_path):
         quat = Quaternion(box["rotation"][0], box["rotation"][1], box["rotation"][2], box["rotation"][3])
         new_box.heading = quat.radians
 
+        # constructs metadata for the box
         new_metadata = open_label.Label.Metadata()
         new_metadata.speed_x = box["data"]["speed_x"]
         new_metadata.speed_y = box["data"]["speed_y"]
         new_metadata.accel_x = box["data"]["accel_x"]
         new_metadata.accel_y = box["data"]["accel_y"]
 
+        # Copy values into new box
         new_label.box.CopyFrom(new_box)
         new_label.metadata.CopyFrom(new_metadata)
         
+        # Adds annotation class to box
         if box["annotation"] == "Vehicle":
             new_type = 1
         elif box["annotation"] == "Pedestrian":
@@ -142,19 +133,20 @@ def extract_bounding(frame, frame_num, input_path):
         elif box["annotation"] == "Cyclist":
             new_type = 4
         else:
+            # UNKNOWN in Waymo
             new_type = 0
         
         new_label.type = new_type
-       
-        new_label.id = box["data"]["id"]
-        new_label.num_lidar_points_in_box = box["data"]["num_lidar_points_in_box"]
 
-        fp1 = open("label.txt", "w")
-        fp1.write(repr(new_label))
+        # stores ids and internal points
+        new_label.id = box["id"]
+        new_label.num_lidar_points_in_box = box["internal_pts"]
+
+        # add label (annotation) to list of labels
         new_laser_labels.append(new_label)
 
     return frame
-        
+
 def count_frames(dataset):
     """counts frames in dataset to use for progress bar
     Args:
@@ -172,8 +164,16 @@ def count_frames(dataset):
 if __name__ == "__main__":
     (original_path, input_path, output_path, scene_names) = parse_options()
 
+    # Checks whether files are expected formats (does not check LVT directory)
+    if os.path.splitext(output_path)[1] != ".tfrecord":
+        print("The output file path specified is not a tfrecord")
+        sys.exit(2)
+
+    if os.path.splitext(original_path)[1] != ".tfrecord":
+        print("The original file specified is not a tfrecord")
+        sys.exit(2)
+
     dataset = tf.data.TFRecordDataset(original_path)
-    
     writer = tf.io.TFRecordWriter(output_path)
 
 
@@ -188,10 +188,11 @@ if __name__ == "__main__":
         #returns a new frame with edited annotations
         newframe = extract_bounding(frame, frame_num, input_path)
 
+        # writes out data to new tfrecord
         output = newframe.SerializeToString()
-
         writer.write(output)
 
+        # update progress bar
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
 
