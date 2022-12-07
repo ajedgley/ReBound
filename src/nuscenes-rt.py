@@ -82,11 +82,11 @@ def extract_frame(frame_num, input_path):
         box.translate(np.array(ego["translation"]))
 
         # Update annotation
-        ann_token = (bounding_box["data"]["token"] if bounding_box["data"] else token_hex(16))
+        # use ann_token if exists, else create new token
+        ann_token = (bounding_box["data"]["ann_token"] if "ann_token" in bounding_box["data"] else token_hex(16))
         sample_token = timestamps[frame_num]
-        # print(timestamps[frame_num])
-        # print(sample_token)
-        instance_token = (bounding_box["data"]["instance_token"] if bounding_box["data"] else token_hex(16))
+        # use instance_token if exists, else create new token
+        instance_token = (bounding_box["id"] if bounding_box["id"] != "" else token_hex(16))
         data = {}
         data["token"] = ann_token
         data["sample_token"] = sample_token
@@ -95,7 +95,7 @@ def extract_frame(frame_num, input_path):
         data["attribute_tokens"] = (sample_annotations[ann_token]["attribute_tokens"] if ann_token in sample_annotations else [])
         # Default to 4
         data["visibility_token"] = (sample_annotations[ann_token]["visibility_token"] if ann_token in sample_annotations else 4)
-        # Use original translation, size, and rotation if not edited or added
+        # Use original translation, size, and rotation if not edited/added
         if (ann_token in sample_annotations) and (bounding_box["data"]):
             data["translation"] = sample_annotations[ann_token]["translation"]
             data["size"] = sample_annotations[ann_token]["size"]
@@ -106,8 +106,9 @@ def extract_frame(frame_num, input_path):
             data["translation"] = box.center.tolist()
             data["size"] = bounding_box["size"]
             data["rotation"] = box.orientation.q.tolist()
-            # Calculating num_lidar_pts and num_radar_pts is expensive
+            # Calculating num_lidar_pts and num_radar_pts may be expensive
             data["num_lidar_pts"] = geometry_utils.compute_interior_points(bounding_box, pcd)
+            # data["num_lidar_pts"] = bounding_box["internal_pts"]
             data["num_radar_pts"] = 0
         # Update this later
         data["prev"] = "" 
