@@ -12,15 +12,15 @@ from utils import dataformat_utils
 from utils import geometry_utils
 
 def parse_options():
-    """Read in user command line input to get directory paths which will be used for input and output.
+    ''' Read in user command line input to get directory paths which will be used for input and output.
     Args:
         None
     Returns:
-        input_path: Path to NuScenes dataset being read into LVT
-        output_path: Path where user wants LVT to generate generic data format used in program
+        input_path: Path to generic dataset being read into LVT
+        output_path: Path where user wants LVT to export to, and has the original dataset
         scene_name: Name of the scene in NuScenes
         pred_path: Path to data based on a model's predictions
-        """
+    '''
     input_path = ""
     output_path = ""
     # We can make scene_names a list so that it either includes the name of one scene or every scene a user wants to batch process
@@ -67,6 +67,14 @@ def parse_options():
     return (input_path, output_path, scene_names, pred_path, ver_name)
 
 def extract_frame(frame_num, input_path):
+    ''' Extracts data from a generic frame that is needed for an existing nuScenes data
+    Args:
+        frame_num: frame number
+        input_path: path to generic data
+    Returns:
+        None
+    '''
+
     # Necessary files from generic data format
     with open(input_path + "/bounding/" + str(frame_num) + "/boxes.json") as f:
             bounding = json.load(f)
@@ -193,7 +201,7 @@ if __name__ == "__main__":
     if not os.path.exists(output_path + ver_name):
         sys.exit("Invalid output path. Please check paths entered and try again.")
 
-    # Necessary files from original nuscenes to update annotations
+    # Necessary files from original nuscenes dataset to update annotations
     with open(output_path + ver_name + "/sample_annotation.json") as f:
         data = json.load(f)
         sample_annotations = {}
@@ -232,6 +240,17 @@ if __name__ == "__main__":
 
     # Revert all the scenes
     for scene_name in scene_names:
+        # Verify correct original format
+        with open(input_path + scene_name +  "/metadata.json") as f:
+            metadata = json.load(f)
+            if metadata["source-format"] != "nuScenes":
+                input_string = input("The original and exporting format do not match, do you wish to continue (y/n)?\n").lower()
+                # exporting between formats not supported
+                if input_string == 'y' or input_string == 'yes':
+                    sys.exit("Exporting to different format not yet supported")
+                # skip scene
+                continue
+
         with open(input_path + scene_name + "/timestamps.json") as f:
             data = json.load(f)
             timestamps = data["timestamps"]

@@ -19,8 +19,10 @@ def parse_options():
     Args:
         None
     Returns:
-        input_path: Path to LVT dataset being exported into argoverse
-        output_path: Path to existing argoverse dataset
+        input_path: Path to generic dataset being read into LVT
+        output_path: Path where user wants LVT to export to, and has the original dataset
+        scene_name: Name of the scene in NuScenes
+        pred_path: Path to data based on a model's predictions
     '''
     input_path = ""
     output_path = ""
@@ -51,8 +53,14 @@ def parse_options():
     return (input_path, output_path, scene_names)
 
 def export_annotations(input_path, output_path):
-    """Exports the annotations to an existing argoverse directory
-    """
+    ''' Extracts data from a generic frame that is needed for an existing argoverse dataset
+    Args:
+        frame_num: frame number
+        input_path: path to generic data
+    Returns:
+        None
+    '''
+
     # Setup progress bar
     frame_count = 0
     for d in os.scandir(input_path + "bounding/"):
@@ -111,7 +119,6 @@ if __name__ == "__main__":
     if not os.path.exists(input_path):
         sys.exit("Invalid input path. Please check paths entered and try again.")
     # Verify output path exists
-    # TODO check metadata
     if not os.path.exists(input_path):
         sys.exit("Invalid output path. Please check paths entered and try again.")
     input_path += ("" if input_path[-1] == "/" else "/")
@@ -127,4 +134,15 @@ if __name__ == "__main__":
     
     # Export all the scenes
     for scene_name in scene_names:
+        # Verify correct original format
+        with open(input_path + scene_name +  "/metadata.json") as f:
+            metadata = json.load(f)
+            if metadata["source-format"] != "Argoverse":
+                input_string = input("The original and exporting format do not match, do you wish to continue (y/n)?\n").lower()
+                # exporting between formats not supported
+                if input_string == 'y' or input_string == 'yes':
+                    sys.exit("Exporting to different format not yet supported")
+                # skip scene
+                continue
+
         export_annotations(input_path+scene_name+"/", output_path+scene_name+"/")
