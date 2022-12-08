@@ -254,6 +254,9 @@ def add_metadata(path, source_format, files):
     with open(path + '/metadata.json', 'w') as f:
         json.dump(metadata, f)
 
+def add_timestamps(path, timestamps):
+    with open(path + "/timestamps.json","w") as f:
+        json.dump({"timestamps":timestamps}, f, indent=0)
 
 def print_progress_bar(frame_num, total):
     """Prints a progress bar

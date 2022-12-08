@@ -346,8 +346,7 @@ def convert_dataset(output_path, scene_name, pred_data):
         frame_num += 1
         sample = nusc.get('sample', sample['next'])
         dataformat_utils.print_progress_bar(frame_num, frame_count)
-    with open(output_path + "/timestamps.json","w") as f:
-        json.dump({"timestamps":timestamps}, f, indent=0)
+    dataformat_utils.add_timestamps(output_path, timestamps)
 
     # Store metadata
     dataformat_utils.add_metadata(output_path, 'nuScenes', ['timestamps.json'])

@@ -70,7 +70,8 @@ def export_annotations(input_path, output_path):
     dataformat_utils.print_progress_bar(0, frame_count)
 
     # read timestamps
-    timestamps = pd.read_csv(input_path + 'timestamps.csv')
+    with open(input_path + "timestamps.json") as f:
+        timestamps = json.load(f)["timestamps"]
 
     bounding_path = input_path + 'bounding'
 
@@ -88,7 +89,7 @@ def export_annotations(input_path, output_path):
                 # calulates internal points if it is not stored
                 box["internal_pts"] = geometry_utils.compute_interior_points(box, pcd)
             row_list.append({
-                "timestamp_ns": timestamps.loc[frame_num]["timestamps"],
+                "timestamp_ns": timestamps[frame_num],
                 "track_uuid": box["id"],
                 "category": box["annotation"],
                 "length_m": box["size"][1],

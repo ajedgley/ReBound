@@ -193,7 +193,7 @@ def convert_dataset(input_path, output_path):
         dataformat_utils.print_progress_bar(frame_num, frame_count)
 
     # Store timestamps
-    pd.DataFrame(timestamps, columns=['timestamps']).to_csv(output_path + 'timestamps.csv')
+    dataformat_utils.add_timestamps(output_path, timestamps)
 
 if __name__ == "__main__":
     (input_path, output_path, scene_names) = parse_options()
