@@ -1,6 +1,7 @@
-# LiDAR Visualization Tool
+# ReBound
+## An Open-Source LiDAR Visualization and Annotation Tool
 
-LVT aims to reduce the time AV researchers spend dealing with dataset API issues so they can spend more time analyzing data. Researchers are able to load in data and immediately visualize it as LiDAR point clouds or RGB images.
+ReBound aims to reduce the time AV researchers spend dealing with dataset API issues so they can spend more time analyzing data. Researchers are able to load in data and immediately visualize it as LiDAR point clouds or RGB images.
 
 Our app aims to provide researchers with the necessary tools to easily visualize the data their models are producing so that they can quickly find and see faults with their own eyes to get a better idea of why their model is failing.
 
@@ -24,7 +25,7 @@ Our app aims to provide researchers with the necessary tools to easily visualize
 
 
 
-### Docs: [GitBook](https://umd-cmsc435-lidar-students.gitbook.io/lvt/)
+### Docs: 
 
 
 
