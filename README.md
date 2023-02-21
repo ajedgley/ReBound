@@ -25,7 +25,7 @@ Our app aims to provide researchers with the necessary tools to easily visualize
 
 
 
-### Docs: 
+### Docs: Documentation for ReBound can be found in the Wiki [here](https://github.com/ajedgley/ReBound/wiki/ReBound-Intro)
 
 
 
