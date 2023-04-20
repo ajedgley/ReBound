@@ -30,3 +30,13 @@ Our app aims to provide researchers with the necessary tools to easily visualize
 
 
 <img title="" src="https://files.gitbook.com/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FLwXJQFLIM5IJpwSLEYfC%2Fuploads%2F9YIBroiQ3eduUX55VuD7%2FLVT1.png?alt=media&token=d06c7735-5c6a-4ba6-9ffd-79e266c5fdf0" alt="" data-align="center">
+
+
+If you find this codebase useful, please consider citing:
+@article{chen2023rebound,
+  title={ReBound: An Open-Source 3D Bounding Box Annotation Tool for Active Learning},
+  author={Chen, Wesley and Edgley, Andrew and Hota, Raunak and Liu, Joshua and Schwartz, Ezra and Yizar, Aminah and Peri, Neehar and Purtilo, James},
+  journal={arXiv preprint arXiv:2303.06250},
+  year={2023}
+} 
+
