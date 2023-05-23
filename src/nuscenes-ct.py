@@ -155,7 +155,7 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         
     dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, instance_tokens, num_lidar_pts, data={"ann_token":ann_tokens})
 
-def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data):
+def extract_pred_bounding(nusc, scene_token, sample, output_path, pred_data):
     """Similar to extract_bounding, but specifically to read in predicted data given by a user
     Args:
         pred_path: Path to predicated data provided by user
@@ -205,7 +205,7 @@ def extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pre
             rotations.append(box.orientation.q.tolist())
             annotation_names.append(data['detection_name'])
             confidences.append(int(data['detection_score'] * 100))
-        dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, True)
+        dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, None, None, predicted=True)
         frame_num += 1
 
 def extract_rgb(nusc, sample, frame_num, target_path):
@@ -323,7 +323,7 @@ def convert_dataset(output_path, scene_name, pred_data):
 
     if pred_data != {}:
         print('Extracting predicted bounding boxes...')
-        extract_pred_bounding(pred_path, nusc, scene_token, sample, output_path, pred_data)
+        extract_pred_bounding(nusc, scene_token, sample, output_path, pred_data)
 
 
 

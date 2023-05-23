@@ -202,7 +202,7 @@ class Window:
         self.pred_check_horiz = []
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
-            boxes = json.load(open(os.path.join(self.lct_path,"bounding", str(i), "boxes.json")))
+            boxes = json.load(open(os.path.join(self.lct_path,"pred_bounding", str(i), "boxes.json")))
             for box in boxes['boxes']:
                 if box['annotation'] not in self.pred_color_map:
                     self.all_pred_annotations.append(box['annotation'])
@@ -221,7 +221,7 @@ class Window:
                     horiz.add_child(gui.Label("Count: 0"))
                     self.pred_check_horiz.append(horiz)
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
 
         # Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
@@ -497,7 +497,7 @@ class Window:
             count_widget.text = "Count: " + str(count_num)
         
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
             #Update the counters for predicted boxes
             for horiz_widget in self.pred_check_horiz:
                 children = horiz_widget.get_children()
@@ -970,7 +970,7 @@ class Window:
         for j in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
             try:
-                pred_boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
+                pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
             except FileNotFoundError:
                 layout.add_child(gui.Label("Error reading predicted data"))
                 window.add_child(layout)
