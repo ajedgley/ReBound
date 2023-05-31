@@ -38,7 +38,7 @@ class Annotation:
 	# returns created window with all its buttons and whatnot
 	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render,
 				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map,
-				 image_window, image_widget, lct_path, frame_num, camera_sensors):
+				 image_window, image_widget, lct_path, frame_num, camera_sensors, lidar_sensors):
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
@@ -65,6 +65,10 @@ class Annotation:
 		self.image_h = self.image.height
 		self.image = np.asarray(self.image)
 
+		self.lidar_sensors = lidar_sensors
+		self.lidar_sensor_name = lidar_sensors[0]
+		self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
+		self.pcd_paths = []
 		
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
@@ -112,6 +116,34 @@ class Annotation:
 		em = self.cw.theme.font_size
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
 		layout = gui.Vert(0.50 * em, margin)
+
+		# num of frames available to display
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+		self.num_frames = len(frames_available)
+
+		# switch between frames
+		self.frame_select = gui.NumberEdit(gui.NumberEdit.INT)
+		self.frame_select.set_limits(0, self.num_frames)
+		self.frame_select.set_value(self.frame_num)
+		self.frame_select.set_on_value_changed(self.on_frame_switch)
+
+		frame_switch_layout = gui.Horiz()
+		frame_switch_layout.add_child(gui.Label("Switch Frame"))
+		frame_switch_layout.add_child(self.frame_select)
+
+		# button to center pointcloud view on vehicle
+		center_horiz = gui.Horiz()
+		center_view_button = gui.Button("Center Pointcloud View on Vehicle")
+		center_view_button.set_on_clicked(self.jump_to_vehicle)
+		#center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
+		center_horiz.add_child(center_view_button)
+
+		self.label_list = []
+
+		self.show_gt = True
+
+		# hardcoding to test
+		self.min_confidence = 0.5
 
 		# buttons for saving/saving as annotation changes
 		save_annotation_vert = gui.CollapsableVert("Save")
@@ -261,6 +293,8 @@ class Annotation:
 
 		# adding all of the horiz to the vert, in order
 		layout.add_child(save_annotation_vert)
+		layout.add_child(frame_switch_layout)
+		layout.add_child(center_horiz)
 		layout.add_child(add_remove_vert)
 		layout.add_child(tool_vert)
 		layout.add_child(toggle_camera_vert)
@@ -645,7 +679,7 @@ class Annotation:
 		# changes color of box based on label selection
 		new_color = None
 		if label in self.color_map and box_data["confidence"] == 101:
-			new_color = self.pred_color_map[label]
+			new_color = self.color_map[label]
 		elif label in self.pred_color_map:
 			new_color = self.pred_color_map[label]
 
@@ -839,15 +873,17 @@ class Annotation:
 		# Extract new image from file
 		self.image = np.asarray(Image.open(self.image_path))
 
-		for b in self.temp_boxes["boxes"]:
-			box = Box(b["origin"], b["size"], Quaternion(b["rotation"]), name=b["annotation"], score=b["confidence"],
+		for b in self.boxes_to_render:
+			print(b)
+			box = Box(b[0], b[1], Quaternion(b[2]), name=b[3], score=b[4],
 					  velocity=(0, 0, 0))
-			color = self.pred_color_map[b["annotation"]]
+			color = b[5]
+			
 
 			# Box is stored in vehicle frame, so transform it to RGB sensor frame
 			box.translate(-np.array(self.image_extrinsic['translation']))
 			box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
-			curr_index = self.temp_boxes["boxes"].index(b)
+			curr_index = self.boxes_to_render.index(b)
 			line_weight = 2
 			# Thank you to Oscar Beijbom for providing this box rendering algorithm at https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
 			if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h),
@@ -870,16 +906,29 @@ class Annotation:
 								 c, line_weight)
 						prev = corner
 
+				# if b["confidence"] >= 100: # If the box is a ground truth box
 				# Draw the sides
 				for i in range(4):
 					cv2.line(self.image,
-							 (int(corners.T[i][0]), int(corners.T[i][1])),
-							 (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
-							 color, line_weight)
+							(int(corners.T[i][0]), int(corners.T[i][1])),
+							(int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+							color, line_weight)
 
 				# Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
 				draw_rect(corners.T[:4], color)
 				draw_rect(corners.T[4:], color)
+				
+				# else: # If the box is a predicted box
+				# 	# Draw the sides
+				# 	for i in range(4):
+				# 		cv2.line(self.image,
+				# 				(int(corners.T[i][0]), int(corners.T[i][1])),
+				# 				(int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+				# 				pred_color, line_weight)
+						
+				# 	# Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
+				# 	draw_rect(corners.T[:4], pred_color)
+				# 	draw_rect(corners.T[4:], pred_color)
 
 				# Draw line indicating the front
 				center_bottom_forward = np.mean(corners.T[2:4], axis=0)
@@ -889,10 +938,10 @@ class Annotation:
 						 (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
 						 color, line_weight)
 
-				# Only render confidence if this isnt at GT box
-				if b["confidence"] < 100 and self.show_score:
-					cv2.putText(self.image, str(b["confidence"]), (int(corners.T[0][0]), int(corners.T[1][1])),
-								cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+				# might be useful later -- Only render confidence if this isnt at GT box
+				# if b["confidence"] < 100 and self.show_score:
+				# 	cv2.putText(self.image, str(b["confidence"]), (int(corners.T[0][0]), int(corners.T[1][1])),
+				# 				cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
 		new_image = o3d.geometry.Image(self.image)
 		self.image_widget.update_image(new_image)
@@ -957,6 +1006,31 @@ class Annotation:
                 """
 		self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) + ".jpg")
 		self.update_poses()
+
+	def on_frame_switch(self, new_val):
+		"""This updates the frame number of the window based on user input and then updates the window
+           Validates that the new frame number is valid (within range of frame nums) 
+            Args:
+                self: window object
+                new_val: new fram number
+            Returns:
+                None
+                """
+		if int(new_val) >= 0 and int(new_val) < self.num_frames:
+            # Set new frame value
+			self.frame_num = int(new_val)
+            # Update Bounding Box List
+			self.update()
+	
+	def jump_to_vehicle(self):
+		bounds = self.scene_widget.scene.bounding_box
+		self.scene_widget.setup_camera(10, bounds, self.frame_extrinsic['translation'])
+		eye = [0,0,0]
+		eye[0] = self.frame_extrinsic['translation'][0]
+		eye[1] = self.frame_extrinsic['translation'][1]
+		eye[2] = 150.0
+		self.scene_widget.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+		self.update()
 
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
@@ -1081,4 +1155,154 @@ class Annotation:
 	# getters and setters below
 	def getCw(self):
 		return self.cw
+	
+	def update_pcd_path(self):
+		"""This clears the current pcd_paths stored and updates it with the sensors currently stored in lidar_sensors
+            Args:
+                self: window object
+            Returns:
+                None
+                """
+		self.pcd_paths.clear()
+		for sensor in self.lidar_sensors:
+			self.pcd_paths.append(os.path.join(self.lct_path, "pointcloud", sensor, str(self.frame_num) + ".pcd"))
+
+	def update_pointcloud(self):
+		"""Takes new pointcloud data and converts it to global frame, 
+			then renders the bounding boxes (Assuming the boxes are vehicle frame
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+		self.scene_widget.scene.clear_geometry()
+		self.boxes_in_scene = []
+		self.box_indices = []
+		# Add Pointcloud
+		temp_points = np.empty((0,3))
+		for label in self.label_list:
+			self.scene_widget.remove_3d_label(label)
+
+		self.label_list = []
+
+		for i, pcd_path in enumerate(self.pcd_paths):
+			temp_cloud = o3d.io.read_point_cloud(pcd_path)
+			ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
+
+			# Transform lidar points into global frame
+			temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
+			temp_cloud.translate(np.array(self.frame_extrinsic['translation']))
+			temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
+
+		self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
+		# Add new global frame pointcloud to our 3D widget
+		self.scene_widget.scene.add_geometry("Point Cloud", self.pointcloud, self.coord_frame_mat)
+		self.scene_widget.scene.show_axes(True)
+		i = 0
+		mat = rendering.MaterialRecord()
+		mat.shader = "unlitLine"
+		mat.line_width = .25
+
+		for box in self.boxes_to_render:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box[SIZE][1]
+			size[1] = box[SIZE][0]
+			size[2] = box[SIZE][2]
+			color = box[COLOR]
+			bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+			bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+			self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
+			self.boxes_in_scene.append(bounding_box)
+
+			# might be useful later
+			# if box[CONFIDENCE] < 100 and self.show_score:
+			# 	label = self.scene_widget.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
+			# 	label.color = gui.Color(1.0,0.0,0.0)
+			# 	self.label_list.append(label)
+
+			self.scene_widget.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
+			i += 1
+
+
+
+		#Add Line that indicates current RGB Camera View
+		line = o3d.geometry.LineSet()
+		line.points = o3d.utility.Vector3dVector([[0,0,0], [0,0,2]])
+		line.lines =  o3d.utility.Vector2iVector([[0,1]])
+		line.colors = o3d.utility.Vector3dVector([[1.0,0,0]])
+
+
+		line.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		line.translate(self.image_extrinsic['translation'])
+
+
+		line.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		line.translate(self.frame_extrinsic['translation'])
+
+
+		self.scene_widget.scene.add_geometry("RGB Line",line, mat)
+
+
+		# Force our widgets to update
+		self.scene_widget.force_redraw()
+		#Post Redraw calls seem to crash the app on windows. Temporary workaround
+		if OS_STRING != "Windows":
+			self.point_cloud.post_redraw()
+	
+	def update_bounding(self):
+		"""Updates bounding box information when switching frames
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+
+		#Array that will hold list of boxes that will eventually be rendered
+		self.boxes_to_render = []
+
+		#
+		self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
+		self.pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(self.frame_num), "boxes.json")))
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+		self.pred_frames = len(frames_available) - 1
+		
+		# #If highlight_faults is False, then we just filter boxes
+		
+		# #If checked, add GT Boxes we should render
+		if self.show_gt is True:
+			for box in self.boxes['boxes']:
+				if box['confidence'] >= self.min_confidence:
+					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+									box['confidence'], self.color_map[box['annotation']]]
+					self.boxes_to_render.append(bounding_box)
+
+		#Add Pred Boxes we should render
+		if self.pred_frames > 0:
+			for box in self.pred_boxes['boxes']:
+				if box['confidence'] >= self.min_confidence:
+					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
+					self.boxes_to_render.append(bounding_box)
+
+
+		#Post Redraw calls seem to crash the app on windows. Temporary workaround
+		if OS_STRING != "Windows":
+			self.cw.post_redraw()
+
+	def update(self):
+		""" This updates the window object to reflect the current state
+        Args:
+            self: window object
+        Returns:
+            None
+            """
+		
+		self.update_pcd_path()
+		self.update_bounding()
+		self.update_image_path()
+		self.update_pointcloud()
 
