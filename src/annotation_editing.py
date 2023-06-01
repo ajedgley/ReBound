@@ -140,10 +140,37 @@ class Annotation:
 
 		self.label_list = []
 
-		self.show_gt = True
+		# default to showing predicted data while editing
+		self.show_gt = False
+		self.show_pred = True
 
 		# hardcoding to test
-		self.min_confidence = 0.5
+		self.min_confidence = 50
+		# Set up a widget to specify a minimum annotation confidence
+		confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
+		confidence_select.set_limits(0,100)
+		confidence_select.set_value(50)
+		confidence_select.set_on_value_changed(self.on_confidence_switch)
+
+		# Add confidence select widget to horizontal
+		confidence_select_layout = gui.Horiz()
+		confidence_select_layout.add_child(gui.Label("Specify (Pred) Confidence Threshold"))
+		confidence_select_layout.add_child(confidence_select)
+
+		# Add combobox to switch between predicted and ground truth
+		self.bounding_toggle = gui.Combobox()
+		self.bounding_toggle.add_item("Predicted")
+		self.bounding_toggle.add_item("Ground Truth")
+		self.bounding_toggle.set_on_selection_changed(self.toggle_bounding)
+
+		bounding_toggle_layout = gui.Horiz()
+		bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
+		bounding_toggle_layout.add_child(self.bounding_toggle)
+
+		self.box_data_name = ["bounding"]
+
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+		self.pred_frames = len(frames_available) - 1
 
 		# buttons for saving/saving as annotation changes
 		save_annotation_vert = gui.CollapsableVert("Save")
@@ -295,6 +322,8 @@ class Annotation:
 		layout.add_child(save_annotation_vert)
 		layout.add_child(frame_switch_layout)
 		layout.add_child(center_horiz)
+		layout.add_child(confidence_select_layout)
+		layout.add_child(bounding_toggle_layout)
 		layout.add_child(add_remove_vert)
 		layout.add_child(tool_vert)
 		layout.add_child(toggle_camera_vert)
@@ -874,7 +903,6 @@ class Annotation:
 		self.image = np.asarray(Image.open(self.image_path))
 
 		for b in self.boxes_to_render:
-			print(b)
 			box = Box(b[0], b[1], Quaternion(b[2]), name=b[3], score=b[4],
 					  velocity=(0, 0, 0))
 			color = b[5]
@@ -1022,6 +1050,41 @@ class Annotation:
             # Update Bounding Box List
 			self.update()
 	
+	def on_confidence_switch(self, new_val):
+		"""This updates the minimum confidence after the user changed it.
+			New value must be between 0 and 100 inclusive 
+			Updates the window afterwards
+			Args:
+				self: window object
+				new_val: new value of min confidence
+			Returns:
+				None
+				"""
+		if int(new_val) >= 0 and int(new_val) <= 100:
+			self.min_confidence = int(new_val)
+			self.update()
+
+	def toggle_bounding(self, new_val, new_idx):
+		"""This updates the bounding box on the window to reflect either bounding or predicted bounding
+			Then updates the window to reflect changes 
+			Args:
+				self: window object
+				new_val: the new value of the box
+				new_idx: 
+			Returns:
+				None
+				"""
+		# switch to predicted boxes
+		# if not (self.show_pred and self.show_gt):
+		if new_val == "Predicted" and self.pred_frames > 0:
+			self.show_pred = True
+			self.show_gt = False
+			self.update()
+		else: # switched to ground truth boxes
+			self.show_pred = False
+			self.show_gt = True
+			self.update()
+	
 	def jump_to_vehicle(self):
 		bounds = self.scene_widget.scene.bounding_box
 		self.scene_widget.setup_camera(10, bounds, self.frame_extrinsic['translation'])
@@ -1147,7 +1210,7 @@ class Annotation:
 
 	def confirm_exit(self):
 		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
-		Window(sys.argv[2])
+		Window(sys.argv[2], self.frame_num)
 		self.point_cloud.close()
 		self.image_window.close()
 		self.cw.close()
@@ -1268,8 +1331,6 @@ class Annotation:
 		#
 		self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
 		self.pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(self.frame_num), "boxes.json")))
-		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
-		self.pred_frames = len(frames_available) - 1
 		
 		# #If highlight_faults is False, then we just filter boxes
 		
@@ -1282,11 +1343,12 @@ class Annotation:
 					self.boxes_to_render.append(bounding_box)
 
 		#Add Pred Boxes we should render
-		if self.pred_frames > 0:
-			for box in self.pred_boxes['boxes']:
-				if box['confidence'] >= self.min_confidence:
-					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
-					self.boxes_to_render.append(bounding_box)
+		if self.show_pred is True:
+			if self.pred_frames > 0:
+				for box in self.pred_boxes['boxes']:
+					if box['confidence'] >= self.min_confidence:
+						bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
+						self.boxes_to_render.append(bounding_box)
 
 
 		#Post Redraw calls seem to crash the app on windows. Temporary workaround

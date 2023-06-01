@@ -73,7 +73,7 @@ def parse_options():
 
 class Window:
     MENU_IMPORT = 1
-    def __init__(self, lct_dir):
+    def __init__(self, lct_dir, frame_num=0):
         np.set_printoptions(precision=15)
 
         # Create the objects for the 3 windows that appear when running the application
@@ -125,7 +125,7 @@ class Window:
         # image widget used to draw an image onto our image window
         self.image_widget = gui.ImageWidget()
 
-        self.frame_num = 0
+        self.frame_num = frame_num
         # dictionary that stores the imported JSON file that respresents the annotations in the current frame
         self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
         self.boxes = json.load(open(self.path_string))
@@ -244,6 +244,7 @@ class Window:
         # Set up a widget to switch between frames
         self.frame_select = gui.NumberEdit(gui.NumberEdit.INT)
         self.frame_select.set_limits(0, self.num_frames)
+        self.frame_select.set_value(self.frame_num)
         self.frame_select.set_on_value_changed(self.on_frame_switch)
 
         # Add a frame switching widget to another horizontal widget
