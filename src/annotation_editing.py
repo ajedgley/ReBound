@@ -36,7 +36,7 @@ COLOR = 5
 
 class Annotation:
 	# returns created window with all its buttons and whatnot
-	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render,
+	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, pred_boxes, boxes_to_render,
 				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map,
 				 image_window, image_widget, lct_path, frame_num, camera_sensors, lidar_sensors):
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
@@ -46,7 +46,9 @@ class Annotation:
 		self.image_widget = image_widget
 		self.frame_extrinsic = frame_extrinsic
 		self.all_pred_annotations = annotation_types
+		self.all_gt_annotations = list(color_map.keys())
 		self.old_boxes = deepcopy(boxes)
+		self.old_pred_boxes = deepcopy(pred_boxes)
 		self.boxes_to_render = boxes_to_render 		#list of box metadata in scene
 		self.box_indices = box_indices 				#name references for bounding boxes in scene
 		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
@@ -104,6 +106,7 @@ class Annotation:
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
+		self.temp_pred_boxes = pred_boxes.copy()
 
 		# used for adding new annotations
 		self.new_annotation_types = []
@@ -167,24 +170,30 @@ class Annotation:
 		bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
 		bounding_toggle_layout.add_child(self.bounding_toggle)
 
-		self.box_data_name = ["bounding"]
-
 		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
 		self.pred_frames = len(frames_available) - 1
+
+		self.propagated_gt_boxes = []
+		self.propagated_pred_boxes = []
 
 		# buttons for saving/saving as annotation changes
 		save_annotation_vert = gui.CollapsableVert("Save")
 		save_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		save_annotation_button = gui.Button("Save Changes")
-		save_partial = functools.partial(self.save_changes_to_json, path=path)
+		save_partial = functools.partial(self.save_changes_to_json)
 		save_annotation_button.set_on_clicked(save_partial)
 		self.save_check = 0
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
+		save_and_prop_button = gui.Button("Save and Propagate Changes to Next Frame")
+		save_and_prop_to_next = functools.partial(self.save_and_propagate)
+		save_and_prop_button.set_on_clicked(save_and_prop_to_next)
+
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
 		save_annotation_vert.add_child(save_annotation_horiz)
+		save_annotation_vert.add_child(save_and_prop_button)
 
 		add_remove_vert = gui.CollapsableVert("Add/Delete")
 		add_box_button = gui.Button("Add Bounding Box")
@@ -366,7 +375,10 @@ class Annotation:
 		vol_size = [bbox_params[1][1], bbox_params[1][0], bbox_params[1][2]]
 		vol_params = [origin, vol_size, qtr.rotation_matrix]
 		bounding_box = o3d.geometry.OrientedBoundingBox(origin, qtr.rotation_matrix, size) #Creates bounding box object
-		color = self.pred_color_map[self.all_pred_annotations[0]]
+		if self.show_gt:
+			color = self.color_map[self.all_gt_annotations[0]]
+		else:
+			color = self.pred_color_map[self.all_pred_annotations[0]]
 		hex = '#%02x%02x%02x' % color
 		bounding_box.color = matplotlib.colors.to_rgb(hex) #will select color from annotation type list
 		bbox_name = "bbox_" + str(self.box_count)
@@ -380,7 +392,10 @@ class Annotation:
 		volume_to_add.compute_vertex_normals()
 
 		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, "", 0, {})
-		self.temp_boxes['boxes'].append(box_object_data)
+		if self.show_gt:
+			self.temp_boxes['boxes'].append(box_object_data)
+		else:
+			self.temp_pred_boxes['boxes'].append(box_object_data)
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
@@ -444,10 +459,11 @@ class Annotation:
 		elif event.is_modifier_down(gui.KeyModifier.SHIFT) and self.previous_index != -1:
 			current_box = self.previous_index
 			scene_camera = self.scene_widget.scene.camera
-			box_to_drag = self.boxes_in_scene[current_box]
-			box_name = self.box_indices[current_box]
 			volume_to_drag = self.volumes_in_scene[current_box]
 			volume_name = self.volume_indices[current_box]
+			box_to_drag = self.boxes_in_scene[current_box]
+			box_name = self.box_indices[current_box]
+			
 
 			#otherwise it's the drag part of the event, continually translate current box by the difference between
 			#start position and current position, multiply by scaling factor due to size of grid
@@ -678,9 +694,15 @@ class Annotation:
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 		result = Quaternion(matrix=box_to_rotate.R)
 		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
-		current_temp_box = self.temp_boxes["boxes"][self.previous_index]
+		if self.show_gt:
+			current_temp_box = self.temp_boxes["boxes"][self.previous_index]
+		else:
+			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
 		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {})
-		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
+		if self.show_gt:
+			self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
+		else:
+			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata
 		self.cw.post_redraw()
 
 	#redirects on_value_changed events to appropriate box transformation function
@@ -699,10 +721,16 @@ class Annotation:
 
 	# on label change, changes temp_boxes value and color of current box
 	def label_change_handler(self, label, pos):
-		self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
+		if self.show_gt:
+			self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
+		else:
+			self.temp_pred_boxes["boxes"][self.previous_index]["annotation"] = label
 		current_box = self.boxes_in_scene[self.previous_index]
 		box_name = self.box_indices[self.previous_index]
-		box_data = self.temp_boxes["boxes"][self.previous_index]
+		if self.show_gt:
+			box_data = self.temp_boxes["boxes"][self.previous_index]
+		else:
+			box_data = self.temp_pred_boxes["boxes"][self.previous_index]
 		self.scene_widget.scene.remove_geometry(box_name)
 
 		# changes color of box based on label selection
@@ -1047,6 +1075,7 @@ class Annotation:
 		if int(new_val) >= 0 and int(new_val) < self.num_frames:
             # Set new frame value
 			self.frame_num = int(new_val)
+			self.frame_select.set_value(self.frame_num)
             # Update Bounding Box List
 			self.update()
 	
@@ -1102,7 +1131,10 @@ class Annotation:
 			box_name = self.box_indices[current_box]
 			volume_name = self.volume_indices[current_box]
 
-			self.temp_boxes["boxes"].pop(current_box)
+			if self.show_gt:
+				self.temp_boxes["boxes"].pop(current_box)
+			else:
+				self.temp_pred_boxes["boxes"].pop(current_box)
 			self.box_indices.pop(current_box)
 			self.volume_indices.pop(current_box)
 			self.boxes_in_scene.pop(current_box)
@@ -1168,11 +1200,18 @@ class Annotation:
 		self.cw.close_dialog()
 
 	# overwrites currently open file with temp_boxes
-	def save_changes_to_json(self, path):
+	def save_changes_to_json(self):
 		self.save_check = 1
 		self.cw.close_dialog()
+		# check current annotation type and save to appropriate folder
+		if self.show_gt and not self.show_pred:
+			path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+			boxes_to_save = {"boxes": [box for box in self.temp_boxes["boxes"]]}
+		elif self.show_pred and not self.show_gt:
+			path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
+			boxes_to_save = {"boxes": [box for box in self.temp_pred_boxes["boxes"]]}
 		with open(path, "w") as outfile:
-			outfile.write(json.dumps(self.temp_boxes))
+			outfile.write(json.dumps(boxes_to_save))
 
 	def save_as(self):
 		# opens a file browser to let user select place to save
@@ -1181,6 +1220,30 @@ class Annotation:
 		file_dialog.set_on_cancel(self.cw.close_dialog)
 		file_dialog.set_on_done(self.save_changes_to_json)
 		self.cw.show_dialog(file_dialog)
+
+	def save_and_propagate(self):
+		# propagates changes to the next frame
+		old_gt_boxes_path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+		old_pred_boxes_path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
+
+		old_pred_boxes = json.load(open(old_pred_boxes_path))
+		old_gt_boxes = json.load(open(old_gt_boxes_path))
+
+		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if box not in old_gt_boxes["boxes"]]
+		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if box not in old_pred_boxes["boxes"]]
+
+		self.save_changes_to_json()
+
+		self.propagated_gt_boxes = new_gt_boxes
+		self.propagated_pred_boxes = new_pred_boxes
+
+		print("propagated gt boxes: ", self.propagated_gt_boxes)
+		print("propagated pred boxes: ", self.propagated_pred_boxes)
+
+		new_val = self.frame_num + 1
+		self.on_frame_switch(new_val)
+		
+
 
 	# restarts the program in order to exit
 	def exit_annotation_mode(self):
@@ -1241,6 +1304,8 @@ class Annotation:
 		self.scene_widget.scene.clear_geometry()
 		self.boxes_in_scene = []
 		self.box_indices = []
+		self.volumes_in_scene = []
+		self.volume_indices = []
 		# Add Pointcloud
 		temp_points = np.empty((0,3))
 		for label in self.label_list:
@@ -1291,6 +1356,8 @@ class Annotation:
 			self.scene_widget.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
 			i += 1
 
+		# update volumes in the scene
+		self.create_box_scene(self.scene_widget, self.boxes_to_render, self.frame_extrinsic)
 
 
 		#Add Line that indicates current RGB Camera View
@@ -1330,7 +1397,14 @@ class Annotation:
 
 		#
 		self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
+		self.temp_boxes = self.boxes.copy()
+		self.temp_boxes["boxes"].extend(self.propagated_gt_boxes)
 		self.pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(self.frame_num), "boxes.json")))
+		self.temp_pred_boxes = self.pred_boxes.copy()
+		self.temp_pred_boxes["boxes"].extend(self.propagated_pred_boxes)
+
+		self.propagated_gt_boxes = [] #reset propagated boxes
+		self.propagated_pred_boxes = []
 		
 		# #If highlight_faults is False, then we just filter boxes
 		

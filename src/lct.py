@@ -1066,7 +1066,7 @@ class Window:
     def on_annotation_start(self):
         self.controls.close()
         #self.image_window.close()
-        annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
+        annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.pred_boxes,
                                             self.boxes_to_render, self.boxes_in_scene, self.box_indices,
                                             self.all_pred_annotations, self.path_string, self.color_map, self.pred_color_map,
                                             self.image_window, self.image_widget, self.lct_path, self.frame_num, self.camera_sensors, self.lidar_sensors)
