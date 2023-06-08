@@ -247,7 +247,7 @@ class Annotation:
 		#the data fields are accessible to any function to allow easy manipulation during drag operations
 		properties_vert = gui.CollapsableVert("Properties", 0.25 * em, margin)
 		trans_collapse = gui.CollapsableVert("Position")
-		rot_collapse = gui.CollapsableVert("Rotation")
+		rot_collapse = gui.CollapsableVert("Rotation (specify change in degrees)")
 		scale_collapse = gui.CollapsableVert("Scale")
 
 		self.annotation_class = gui.Combobox()
@@ -391,10 +391,20 @@ class Annotation:
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, "", 0, {})
+		# TODO: change the coordinate frame of metadata from global to ego
+		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
+		#to the boxes.json file
+		box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
+		reverse_extrinsic = Quaternion(self.frame_extrinsic['rotation']).inverse
+		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
+		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+		result = Quaternion(matrix=box_to_rotate.R)
+		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
 		if self.show_gt:
+			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101, "", 0, {"propagate": True,})
 			self.temp_boxes['boxes'].append(box_object_data)
 		else:
+			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 51, "", 0, {"propagate": True,}) # TODO: change confidence
 			self.temp_pred_boxes['boxes'].append(box_object_data)
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
@@ -643,7 +653,7 @@ class Annotation:
 		box_object = self.boxes_in_scene[current_box]
 
 		scaled_color = tuple(255*x for x in box_object.color)
-		if scaled_color in self.color_map.values():
+		if self.show_gt:
 			self.annotation_type.text = "Ground Truth"
 			selected = list(self.color_map.keys())[list(self.color_map.values()).index(scaled_color)]
 			if self.annotation_class.get_item(0) != selected:
@@ -652,7 +662,7 @@ class Annotation:
 				for annotation in self.color_map:
 					if annotation != selected:
 						self.annotation_class.add_item(annotation)
-		elif scaled_color in self.pred_color_map.values():
+		elif self.show_pred:
 			self.annotation_type.text = "Prediction"
 			selected = list(self.pred_color_map.keys())[list(self.pred_color_map.values()).index(scaled_color)]
 			if self.annotation_class.get_item(0) != selected:
@@ -698,7 +708,11 @@ class Annotation:
 			current_temp_box = self.temp_boxes["boxes"][self.previous_index]
 		else:
 			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {})
+		
+		if current_temp_box["data"]["propagate"]:
+			updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {"propagate": True})
+		else:
+			updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {"propagate": False})
 		if self.show_gt:
 			self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		else:
@@ -888,7 +902,18 @@ class Annotation:
 			size = size.tolist()
 		if isinstance(rotation, np.ndarray):
 			rotation = rotation.tolist()
-		
+
+		if self.show_pred:
+			return {
+				"origin": origin,
+				"size": size,
+				"rotation": rotation,
+				"annotation": label,
+				"confidence": confidence,
+				"data": data
+				# TODO: add ids
+			}
+
 		return {
 			"origin": origin,
 			"size": size,
@@ -1204,6 +1229,10 @@ class Annotation:
 		self.save_check = 1
 		self.cw.close_dialog()
 		# check current annotation type and save to appropriate folder
+		for box in self.temp_boxes["boxes"]:
+			box["data"]["propagate"] = False
+		for box in self.temp_pred_boxes["boxes"]:
+			box["data"]["propagate"] = False
 		if self.show_gt and not self.show_pred:
 			path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
 			boxes_to_save = {"boxes": [box for box in self.temp_boxes["boxes"]]}
@@ -1229,16 +1258,29 @@ class Annotation:
 		old_pred_boxes = json.load(open(old_pred_boxes_path))
 		old_gt_boxes = json.load(open(old_gt_boxes_path))
 
-		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if box not in old_gt_boxes["boxes"]]
-		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if box not in old_pred_boxes["boxes"]]
+		print(self.temp_pred_boxes["boxes"][0]["data"]["propagate"])
+		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if (box not in old_gt_boxes["boxes"] and box["data"]["propagate"]==True)]
+		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if (box not in old_pred_boxes["boxes"] and box["data"]["propagate"]==True)]
+
+		prev_gt_boxes = [box for box in old_gt_boxes["boxes"] if box not in self.temp_boxes["boxes"]]
+		prev_pred_boxes = [box for box in old_pred_boxes["boxes"] if box not in self.temp_pred_boxes["boxes"]]
+
 
 		self.save_changes_to_json()
+
+		for box in new_gt_boxes:
+			box["data"]["propagate"] = True
+		for box in new_pred_boxes:
+			box["data"]["propagate"] = True
 
 		self.propagated_gt_boxes = new_gt_boxes
 		self.propagated_pred_boxes = new_pred_boxes
 
+		# should have propagate = true
 		print("propagated gt boxes: ", self.propagated_gt_boxes)
 		print("propagated pred boxes: ", self.propagated_pred_boxes)
+		print("prev gt boxes: ", prev_gt_boxes)
+		print("prev pred boxes: ", prev_pred_boxes)
 
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
@@ -1436,7 +1478,10 @@ class Annotation:
         Returns:
             None
             """
-		
+		print("boxes in scene:", self.boxes_in_scene)
+		print("boxes to render:", self.boxes_to_render)
+		print("temp boxes:", self.temp_boxes)
+		print("temp pred boxes:", self.temp_pred_boxes)
 		self.update_pcd_path()
 		self.update_bounding()
 		self.update_image_path()
