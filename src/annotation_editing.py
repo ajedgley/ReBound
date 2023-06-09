@@ -94,6 +94,10 @@ class Annotation:
 		self.coord_frame_mat = rendering.MaterialRecord()
 		self.coord_frame_mat.shader = "defaultUnlit"
 
+		self.pcd_mat = rendering.MaterialRecord()
+		self.pcd_mat.shader = "defaultUnlit"
+		self.pcd_mat.point_size = 2
+
 		self.coord_frame = "coord_frame"
 
 		# mouse and key event modifiers
@@ -288,6 +292,17 @@ class Annotation:
 		annot_vert.add_child(annot_type)
 		annot_vert.add_child(annot_class)
 		annot_vert.add_child(add_custom_horiz)
+
+		conf_vert = gui.CollapsableVert("Confidence")
+		self.confidence_set = gui.NumberEdit(gui.NumberEdit.Type.INT)
+		self.confidence_set.set_limits(0,100)
+		self.confidence_set.set_value(51)
+		
+		# Add confidence set widget to horizontal
+		confidence_set_layout = gui.Horiz()
+		confidence_set_layout.add_child(gui.Label("Specify (Pred) Confidence Value"))
+		confidence_set_layout.add_child(self.confidence_set)
+		conf_vert.add_child(confidence_set_layout)
 		
 		trans_horiz = gui.Horiz(0.5 * em)
 		trans_horiz.add_child(gui.Label("X:"))
@@ -317,6 +332,7 @@ class Annotation:
 		scale_collapse.add_child(scale_horiz)
 
 		properties_vert.add_child(annot_vert)
+		properties_vert.add_child(conf_vert)
 		properties_vert.add_child(trans_collapse)
 		properties_vert.add_child(rot_collapse)
 		properties_vert.add_child(scale_collapse)
@@ -404,7 +420,7 @@ class Annotation:
 			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101, "", 0, {"propagate": True,})
 			self.temp_boxes['boxes'].append(box_object_data)
 		else:
-			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 51, "", 0, {"propagate": True,}) # TODO: change confidence
+			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value , "", 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box_object_data)
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
@@ -591,6 +607,7 @@ class Annotation:
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
+		self.confidence_set.set_value(int(self.boxes_to_render[box_index][CONFIDENCE]))
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
@@ -1366,7 +1383,7 @@ class Annotation:
 
 		self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
 		# Add new global frame pointcloud to our 3D widget
-		self.scene_widget.scene.add_geometry("Point Cloud", self.pointcloud, self.coord_frame_mat)
+		self.scene_widget.scene.add_geometry("Point Cloud", self.pointcloud, self.pcd_mat)
 		self.scene_widget.scene.show_axes(True)
 		i = 0
 		mat = rendering.MaterialRecord()
@@ -1478,10 +1495,10 @@ class Annotation:
         Returns:
             None
             """
-		print("boxes in scene:", self.boxes_in_scene)
-		print("boxes to render:", self.boxes_to_render)
-		print("temp boxes:", self.temp_boxes)
-		print("temp pred boxes:", self.temp_pred_boxes)
+		# print("boxes in scene:", self.boxes_in_scene)
+		# print("boxes to render:", self.boxes_to_render)
+		# print("temp boxes:", self.temp_boxes)
+		# print("temp pred boxes:", self.temp_pred_boxes)
 		self.update_pcd_path()
 		self.update_bounding()
 		self.update_image_path()
