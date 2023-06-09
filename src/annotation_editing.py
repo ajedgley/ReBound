@@ -22,6 +22,7 @@ import json
 import cv2
 from lct import Window
 import platform
+import uuid
 
 from copy import deepcopy
 
@@ -277,6 +278,15 @@ class Annotation:
 		self.scale_z = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.scale_z.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="z"))
 		
+		# Add tracking ID widget to horizontal
+		tracking_vert = gui.CollapsableVert("track_id")
+		tracking_id_layout = gui.Horiz(0.50 * em, margin)
+		tracking_id_layout.add_child(gui.Label("id: "))
+		self.tracking_id_set = gui.TextEdit()
+		self.tracking_id_set.placeholder_text = "Select a box"
+		tracking_id_layout.add_child(self.tracking_id_set)
+		tracking_vert.add_child(tracking_id_layout)
+
 		annot_type = gui.Horiz(0.50 * em, margin)
 		annot_type.add_child(gui.Label("Type:"))
 		self.annotation_type = gui.Label("                       ")
@@ -331,6 +341,7 @@ class Annotation:
 		scale_horiz.add_child(self.scale_z)
 		scale_collapse.add_child(scale_horiz)
 
+		properties_vert.add_child(tracking_vert)
 		properties_vert.add_child(annot_vert)
 		properties_vert.add_child(conf_vert)
 		properties_vert.add_child(trans_collapse)
@@ -416,7 +427,8 @@ class Annotation:
 		result = Quaternion(matrix=box_to_rotate.R)
 		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
 		if self.show_gt:
-			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, "", 0, {"propagate": True,})
+			uuid_str = str(uuid.uuid4())
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, "", 0, {"propagate": True, "uuid": uuid_str})
 			self.temp_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
 									box['confidence'], self.color_map[box['annotation']]]
@@ -424,7 +436,9 @@ class Annotation:
 		else:
 			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value , "", 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box_object_data)
-			# TODO: boxes_to_render?
+			# TODO: boxes_to_render? uuids?
+
+		self.tracking_id_set.text_value = uuid_str
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
@@ -611,6 +625,12 @@ class Annotation:
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
 		self.confidence_set.set_value(int(self.boxes_to_render[box_index][CONFIDENCE]))
+		print(box_index)
+		print(self.temp_boxes["boxes"][box_index])
+		print(len(self.temp_boxes["boxes"]))
+		print(len(self.volumes_in_scene))
+		self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
+		# TODO: tracking id for pred
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
@@ -728,11 +748,9 @@ class Annotation:
 			current_temp_box = self.temp_boxes["boxes"][self.previous_index]
 		else:
 			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
+
+		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, current_temp_box["data"])
 		
-		if current_temp_box["data"]["propagate"]:
-			updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {"propagate": True})
-		else:
-			updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {"propagate": False})
 		if self.show_gt:
 			self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		else:
@@ -1121,6 +1139,7 @@ class Annotation:
             # Set new frame value
 			self.frame_num = int(new_val)
 			self.frame_select.set_value(self.frame_num)
+			self.previous_index = -1
             # Update Bounding Box List
 			self.update()
 	
@@ -1370,7 +1389,7 @@ class Annotation:
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
 			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, {"propagate": True,}) #TODO: add ids
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"]) #TODO: add ids
 			self.propagated_gt_boxes.append(ego_box)
 
 			print('ego box: ', ego_box)
@@ -1390,7 +1409,7 @@ class Annotation:
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
 			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, {"propagate": True,})
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
 			self.propagated_pred_boxes.append(ego_box)
 
 			print('ego box: ', ego_box)
