@@ -407,7 +407,6 @@ class Annotation:
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		# TODO: change the coordinate frame of metadata from global to ego
 		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
 		#to the boxes.json file
 		box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
@@ -417,11 +416,15 @@ class Annotation:
 		result = Quaternion(matrix=box_to_rotate.R)
 		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
 		if self.show_gt:
-			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101, "", 0, {"propagate": True,})
-			self.temp_boxes['boxes'].append(box_object_data)
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, "", 0, {"propagate": True,})
+			self.temp_boxes['boxes'].append(box)
+			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+									box['confidence'], self.color_map[box['annotation']]]
+			self.boxes_to_render.append(render_box)
 		else:
 			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value , "", 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box_object_data)
+			# TODO: boxes_to_render?
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
@@ -1290,8 +1293,108 @@ class Annotation:
 		for box in new_pred_boxes:
 			box["data"]["propagate"] = True
 
-		self.propagated_gt_boxes = new_gt_boxes
-		self.propagated_pred_boxes = new_pred_boxes
+		global_new_gt_boxes = []
+
+		# Transform boxes to global frame
+		for box in new_gt_boxes:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			
+			global_box = {
+				'origin': bounding_box.get_center(),
+				'rotation': Quaternion(matrix=bounding_box.R).elements,
+				'size': size,
+				'annotation': box['annotation'],
+				'confidence': box['confidence'],
+				'id': box['id'],
+				'internal_pts': box['internal_pts'],
+				'data': box['data']
+			}
+
+			print(global_box)
+
+			global_new_gt_boxes.append(global_box)
+		
+		global_new_pred_boxes = []
+
+		# Transform boxes to global frame
+		for box in new_pred_boxes:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			
+			global_box = {
+				'origin': bounding_box.get_center(),
+				'rotation': Quaternion(matrix=bounding_box.R).elements,
+				'size': size,
+				'annotation': box['annotation'],
+				'confidence': box['confidence'],
+				'data': box['data']
+				# TODO: add ids
+			}
+
+			print(global_box)
+
+			global_new_pred_boxes.append(global_box)
+
+		# get ego data for next frame
+		next_frame_num = self.frame_num + 1
+		next_frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(next_frame_num) + ".json")))
+
+		# Transform boxes to ego coordinate frame of the next frame
+		for box in global_new_gt_boxes:
+			size = [0,0,0]
+			# switch sizes back TODO: fix this
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+
+			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
+			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
+			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
+			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+			result = Quaternion(matrix=box_to_rotate.R)
+			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, {"propagate": True,}) #TODO: add ids
+			self.propagated_gt_boxes.append(ego_box)
+
+			print('ego box: ', ego_box)
+		
+		for box in global_new_pred_boxes:
+			size = [0,0,0]
+			# switch sizes back TODO: fix this
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+
+			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box)
+			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
+			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
+			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+			result = Quaternion(matrix=box_to_rotate.R)
+			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, {"propagate": True,})
+			self.propagated_pred_boxes.append(ego_box)
+
+			print('ego box: ', ego_box)
+
 
 		# should have propagate = true
 		print("propagated gt boxes: ", self.propagated_gt_boxes)
