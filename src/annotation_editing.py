@@ -101,6 +101,8 @@ class Annotation:
 
 		self.coord_frame = "coord_frame"
 
+		self.source_format = json.load(open(os.path.join(self.lct_path, "metadata.json")))["source-format"]
+
 		# mouse and key event modifiers
 		self.z_drag = False
 		self.drag_operation = True
@@ -190,15 +192,22 @@ class Annotation:
 		self.save_check = 0
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
-		save_and_prop_button = gui.Button("Save and Propagate Changes to Next Frame")
+		save_and_prop_horiz = gui.Horiz(0.50 * em, margin)
+		save_and_prop_button = gui.Button("Save and Propagate New Boxes to Next Frame")
 		save_and_prop_to_next = functools.partial(self.save_and_propagate)
 		save_and_prop_button.set_on_clicked(save_and_prop_to_next)
+		set_velocity_horiz = gui.Horiz(0.50 * em, margin)
+		set_velocity_button = gui.Button("Set Velocity of Propagated Box")
+		set_velocity_button.set_on_clicked(self.set_velocity)
 
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
+		save_and_prop_horiz.add_child(save_and_prop_button)
+		set_velocity_horiz.add_child(set_velocity_button)
 		save_annotation_vert.add_child(save_annotation_horiz)
-		save_annotation_vert.add_child(save_and_prop_button)
+		save_annotation_vert.add_child(save_and_prop_horiz)
+		save_annotation_vert.add_child(set_velocity_horiz)
 
 		add_remove_vert = gui.CollapsableVert("Add/Delete")
 		add_box_button = gui.Button("Add Bounding Box")
@@ -434,6 +443,7 @@ class Annotation:
 									box['confidence'], self.color_map[box['annotation']]]
 			self.boxes_to_render.append(render_box)
 		else:
+			uuid_str = str(uuid.uuid4())
 			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value , "", 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box_object_data)
 			# TODO: boxes_to_render? uuids?
@@ -629,7 +639,10 @@ class Annotation:
 		print(self.temp_boxes["boxes"][box_index])
 		print(len(self.temp_boxes["boxes"]))
 		print(len(self.volumes_in_scene))
-		self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
+		try:
+			self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
+		except KeyError:
+			self.tracking_id_set.text_value = "No ID"
 		# TODO: tracking id for pred
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
@@ -1326,16 +1339,8 @@ class Annotation:
 			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
 			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
 			
-			global_box = {
-				'origin': bounding_box.get_center(),
-				'rotation': Quaternion(matrix=bounding_box.R).elements,
-				'size': size,
-				'annotation': box['annotation'],
-				'confidence': box['confidence'],
-				'id': box['id'],
-				'internal_pts': box['internal_pts'],
-				'data': box['data']
-			}
+			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
+												  box["confidence"], box["id"], box["internal_pts"], box["data"])
 
 			print(global_box)
 
@@ -1355,15 +1360,9 @@ class Annotation:
 			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
 			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
 			
-			global_box = {
-				'origin': bounding_box.get_center(),
-				'rotation': Quaternion(matrix=bounding_box.R).elements,
-				'size': size,
-				'annotation': box['annotation'],
-				'confidence': box['confidence'],
-				'data': box['data']
-				# TODO: add ids
-			}
+			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
+												  box["confidence"], "", 0, box["data"])
+
 
 			print(global_box)
 
@@ -1381,35 +1380,63 @@ class Annotation:
 			size[1] = box["size"][0]
 			size[2] = box["size"][2]
 
-			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			try:
+				velocity = box["data"]["velocity"]
+			except KeyError:
+				velocity = [0,0,0]
+
+			if self.source_format == "nuScenes":
+				delta_time = 0.5
+
+			print("velocity: ", velocity)
+			print("delta_time: ", delta_time)
+			print("box origin: ", box["origin"])
+			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(projected_origin, Quaternion(box["rotation"]).rotation_matrix, size)
 
 			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
 			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
 			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
-			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"]) #TODO: add ids
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], box["id"],
+				      						   box["internal_pts"], box["data"])
+			
+			ego_box['data']['prev_origin'] = projected_origin # stores the previous origin in the global frame
+			
 			self.propagated_gt_boxes.append(ego_box)
 
 			print('ego box: ', ego_box)
 		
 		for box in global_new_pred_boxes:
 			size = [0,0,0]
-			# switch sizes back TODO: fix this
+			# switch x and y scales back
 			size[0] = box["size"][1]
 			size[1] = box["size"][0]
 			size[2] = box["size"][2]
 
-			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			try:
+				velocity = box["data"]["velocity"]
+			except KeyError:
+				velocity = [0,0,0]
+
+			if self.source_format == "nuScenes":
+				delta_time = 0.5
+
+			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(projected_origin, Quaternion(box["rotation"]).rotation_matrix, size)
 
 			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box)
 			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
 			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
-			size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"]) #TODO: add ids
+			ego_box['data']['prev_origin'] = box['origin'] # stores the previous origin in the global frame
+			
+			
 			self.propagated_pred_boxes.append(ego_box)
 
 			print('ego box: ', ego_box)
@@ -1423,6 +1450,47 @@ class Annotation:
 
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
+
+	def set_velocity(self):
+		current_id = self.previous_index
+		if current_id == -1:
+			return
+		
+		if self.show_gt:
+			current_box = self.temp_boxes["boxes"][current_id]
+		else:
+			current_box = self.temp_pred_boxes["boxes"][current_id]
+
+		try: 
+			if current_box["data"]["prev_origin"] == None:
+				return
+			
+		except KeyError:
+			print("ERROR: no prev origin")
+			return
+
+		prev_global_origin = current_box["data"]["prev_origin"]
+		# convert current origin to global frame
+		size = [0,0,0]
+		# Open3D wants sizes in L,W,H
+		size[0] = current_box["size"][1]
+		size[1] = current_box["size"][0]
+		size[2] = current_box["size"][2]
+		bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
+		bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+
+		delta_pos = bounding_box.center - prev_global_origin
+		# assuming that the prev_origin is from the previous frame
+		
+		if self.source_format == "nuScenes":
+			delta_time = 0.5
+		# TODO: add other datasets
+
+		velocity = delta_pos / delta_time
+
+		current_box["data"]["velocity"] = velocity.tolist()
+		print("velocity: ", velocity.tolist())
 		
 
 
