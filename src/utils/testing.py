@@ -76,7 +76,11 @@ def check_inside_cameras(path):
         has_ex = False
         has_jpg = True
         # Files in cameras
+        if dir == ".DS_Store":
+            continue # check for MacOS
         for file in os.listdir(os.path.join(path, dir)):
+            if file == ".DS_Store":
+                continue # check for MacOS
             if file == "extrinsics.json": 
                 if not has_ex: 
                     has_ex = True
@@ -110,7 +114,11 @@ def check_inside_pointcloud(path):
     is_verified = True
 
     for dir in os.listdir(path):
+        if dir == ".DS_Store":
+            continue # check for MacOS
         for file in os.listdir(os.path.join(path, dir)):
+            if file == ".DS_Store":
+                continue # check for MacOS
             extension = file[-4:]
             if extension != ".pcd":
                 is_verified = False
@@ -135,7 +143,11 @@ def check_inside_bounding(path):
         has_description = False
         has_boxes = False
         # Loop through files in frame
+        if dir == ".DS_Store":
+            continue # check for MacOS
         for file in os.listdir(os.path.join(path, dir)):
+            if file == ".DS_Store":
+                continue # check for MacOS
             if has_boxes and has_description:
                 is_verified = False
                 print("directory " + dir + " has multiple description.JSON/boxes.json files")
@@ -164,6 +176,8 @@ def check_inside_ego(path):
     is_verified = True
 
     for file in os.listdir(path):
+        if file == ".DS_Store":
+            continue # check for MacOS
         if not file[-5:] == ".json":
             is_verified = False
             print("There is a file in the ego directory that is not a json file")

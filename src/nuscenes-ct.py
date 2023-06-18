@@ -150,8 +150,8 @@ def extract_bounding(nusc, sample, frame_num, output_path):
         rotations.append(box.orientation.q.tolist())
         annotation_names.append(annotation_metadata['category_name'])
 
-        # Confidence for ground truth data is always 100
-        confidences.append(100)
+        # Confidence for ground truth data is always 101 # changed this to 101 since predictions may have confidence of 100
+        confidences.append(101)
         
     dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, instance_tokens, num_lidar_pts, data={"ann_token":ann_tokens})
 

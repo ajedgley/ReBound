@@ -72,7 +72,7 @@ class Annotation:
 		self.lidar_sensor_name = lidar_sensors[0]
 		self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
 		self.pcd_paths = []
-		
+
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
 		self.curr_box_depth = 0.0
@@ -128,7 +128,7 @@ class Annotation:
 		layout = gui.Vert(0.50 * em, margin)
 
 		# num of frames available to display
-		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding")) if entry.name != ".DS_Store"] # ignore .DS_Store (MacOS)
 		self.num_frames = len(frames_available)
 
 		# switch between frames
@@ -155,17 +155,19 @@ class Annotation:
 		self.show_pred = True
 
 		# hardcoding to test
-		self.min_confidence = 50
-		# Set up a widget to specify a minimum annotation confidence
-		confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
-		confidence_select.set_limits(0,100)
-		confidence_select.set_value(50)
-		confidence_select.set_on_value_changed(self.on_confidence_switch)
+		self.min_confidence = 0
 
-		# Add confidence select widget to horizontal
-		confidence_select_layout = gui.Horiz()
-		confidence_select_layout.add_child(gui.Label("Specify (Pred) Confidence Threshold"))
-		confidence_select_layout.add_child(confidence_select)
+		""" confidence threshold in edit mode """
+		# # Set up a widget to specify a minimum annotation confidence
+		# confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
+		# confidence_select.set_limits(0,100)
+		# confidence_select.set_value(50)
+		# confidence_select.set_on_value_changed(self.on_confidence_switch)
+
+		# # Add confidence select widget to horizontal
+		# confidence_select_layout = gui.Horiz()
+		# confidence_select_layout.add_child(gui.Label("Specify (Pred) Confidence Threshold"))
+		# confidence_select_layout.add_child(confidence_select)
 
 		# Add combobox to switch between predicted and ground truth
 		self.bounding_toggle = gui.Combobox()
@@ -199,12 +201,16 @@ class Annotation:
 		set_velocity_horiz = gui.Horiz(0.50 * em, margin)
 		set_velocity_button = gui.Button("Set Velocity of Propagated Box")
 		set_velocity_button.set_on_clicked(self.set_velocity)
+		set_velocity_label_vert = gui.Vert(1 * em, margin)
+		set_velocity_label = gui.Label("(Box must be selected)")
+		set_velocity_label_vert.add_child(set_velocity_label)
 
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
 		save_and_prop_horiz.add_child(save_and_prop_button)
 		set_velocity_horiz.add_child(set_velocity_button)
+		set_velocity_horiz.add_child(set_velocity_label_vert)
 		save_annotation_vert.add_child(save_annotation_horiz)
 		save_annotation_vert.add_child(save_and_prop_horiz)
 		save_annotation_vert.add_child(set_velocity_horiz)
@@ -314,7 +320,7 @@ class Annotation:
 
 		conf_vert = gui.CollapsableVert("Confidence")
 		self.confidence_set = gui.NumberEdit(gui.NumberEdit.Type.INT)
-		self.confidence_set.set_limits(0,100)
+		self.confidence_set.set_limits(0,101)
 		self.confidence_set.set_value(51)
 		
 		# Add confidence set widget to horizontal
@@ -367,7 +373,7 @@ class Annotation:
 		layout.add_child(save_annotation_vert)
 		layout.add_child(frame_switch_layout)
 		layout.add_child(center_horiz)
-		layout.add_child(confidence_select_layout)
+		# layout.add_child(confidence_select_layout)
 		layout.add_child(bounding_toggle_layout)
 		layout.add_child(add_remove_vert)
 		layout.add_child(tool_vert)
@@ -377,8 +383,10 @@ class Annotation:
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
-		self.update_props()
 		self.update_poses()
+		self.update_props()
+		self.update()
+
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
@@ -440,12 +448,16 @@ class Annotation:
 			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, "", 0, {"propagate": True, "uuid": uuid_str})
 			self.temp_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
-									box['confidence'], self.color_map[box['annotation']]]
+						  box['confidence'], self.color_map[box['annotation']]]
 			self.boxes_to_render.append(render_box)
 		else:
 			uuid_str = str(uuid.uuid4())
-			box_object_data = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value , "", 0, {"propagate": True,})
-			self.temp_pred_boxes['boxes'].append(box_object_data)
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value ,
+				  						   "", 0, {"propagate": True, "uuid": uuid_str})
+			self.temp_pred_boxes['boxes'].append(box)
+			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+						  box['confidence'], self.pred_color_map[box['annotation']]]
+			self.boxes_to_render.append(render_box)
 			# TODO: boxes_to_render? uuids?
 
 		self.tracking_id_set.text_value = uuid_str
@@ -453,6 +465,7 @@ class Annotation:
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
 
+		# might cause an error in Windows OS
 		self.point_cloud.post_redraw()
 		self.cw.post_redraw()
 		self.box_count += 1
@@ -619,6 +632,7 @@ class Annotation:
 			self.scene_widget.scene.show_geometry(self.coord_frame, False)
 
 		self.point_cloud.post_redraw()
+		self.update_boxes_to_render()
 
 		self.previous_index = -1
 		self.box_selected = None
@@ -634,16 +648,23 @@ class Annotation:
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
-		self.confidence_set.set_value(int(self.boxes_to_render[box_index][CONFIDENCE]))
 		print(box_index)
-		print(self.temp_boxes["boxes"][box_index])
-		print(len(self.temp_boxes["boxes"]))
+		# print("temp box:", self.temp_pred_boxes["boxes"][box_index])
+		print(len(self.temp_pred_boxes["boxes"]))
 		print(len(self.volumes_in_scene))
-		try:
-			self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
-		except KeyError:
-			self.tracking_id_set.text_value = "No ID"
-		# TODO: tracking id for pred
+		print(len(self.boxes_to_render))
+		self.confidence_set.set_value(int(self.boxes_to_render[box_index][CONFIDENCE]))
+		
+		if self.show_gt:
+			try:
+				self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
+			except KeyError:
+				self.tracking_id_set.text_value = "No ID"
+		else:
+			try:
+				self.tracking_id_set.text_value = self.temp_pred_boxes["boxes"][box_index]["data"]["uuid"]
+			except KeyError:
+				self.tracking_id_set.text_value = "No ID"
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
@@ -962,7 +983,7 @@ class Annotation:
 				"annotation": label,
 				"confidence": confidence,
 				"data": data
-				# TODO: add ids
+				# TODO: Handle original IDs
 			}
 
 		return {
@@ -1158,7 +1179,7 @@ class Annotation:
 	
 	def on_confidence_switch(self, new_val):
 		"""This updates the minimum confidence after the user changed it.
-			New value must be between 0 and 100 inclusive 
+			New value must be between 0 and 101 inclusive 
 			Updates the window afterwards
 			Args:
 				self: window object
@@ -1166,7 +1187,7 @@ class Annotation:
 			Returns:
 				None
 				"""
-		if int(new_val) >= 0 and int(new_val) <= 100:
+		if int(new_val) >= 0 and int(new_val) <= 101:
 			self.min_confidence = int(new_val)
 			self.update()
 
@@ -1224,6 +1245,7 @@ class Annotation:
 			
 			self.previous_index = -1
 			self.box_selected = None
+			self.update_boxes_to_render()
 			self.update_props()
 			self.update_poses()
 
@@ -1375,7 +1397,7 @@ class Annotation:
 		# Transform boxes to ego coordinate frame of the next frame
 		for box in global_new_gt_boxes:
 			size = [0,0,0]
-			# switch sizes back TODO: fix this
+			# switch sizes back
 			size[0] = box["size"][1]
 			size[1] = box["size"][0]
 			size[2] = box["size"][2]
@@ -1386,7 +1408,7 @@ class Annotation:
 				velocity = [0,0,0]
 
 			if self.source_format == "nuScenes":
-				delta_time = 0.5
+				delta_time = 0.5 # TODO: add other datasets
 
 			print("velocity: ", velocity)
 			print("delta_time: ", delta_time)
@@ -1403,7 +1425,7 @@ class Annotation:
 			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], box["id"],
 				      						   box["internal_pts"], box["data"])
 			
-			ego_box['data']['prev_origin'] = projected_origin # stores the previous origin in the global frame
+			ego_box['data']['prev_origin'] = box["origin"] # stores the current origin in the global frame
 			
 			self.propagated_gt_boxes.append(ego_box)
 
@@ -1411,7 +1433,7 @@ class Annotation:
 		
 		for box in global_new_pred_boxes:
 			size = [0,0,0]
-			# switch x and y scales back
+			# switch sizes back
 			size[0] = box["size"][1]
 			size[1] = box["size"][0]
 			size[2] = box["size"][2]
@@ -1422,7 +1444,7 @@ class Annotation:
 				velocity = [0,0,0]
 
 			if self.source_format == "nuScenes":
-				delta_time = 0.5
+				delta_time = 0.5 # TODO: add other datasets
 
 			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
 
@@ -1433,7 +1455,7 @@ class Annotation:
 			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
 			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 			result = Quaternion(matrix=box_to_rotate.R)
-			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"]) #TODO: add ids
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
 			ego_box['data']['prev_origin'] = box['origin'] # stores the previous origin in the global frame
 			
 			
@@ -1677,6 +1699,34 @@ class Annotation:
 		#Post Redraw calls seem to crash the app on windows. Temporary workaround
 		if OS_STRING != "Windows":
 			self.cw.post_redraw()
+
+	def update_boxes_to_render(self):
+		"""Updates bounding box information when adding/removing boxes (for RGB image)
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+		#Array that will hold list of boxes that will eventually be rendered
+		self.boxes_to_render = []
+
+		# #If checked, add GT Boxes we should render
+		if self.show_gt is True:
+			for box in self.temp_boxes['boxes']:
+				if box['confidence'] >= self.min_confidence:
+					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+									box['confidence'], self.color_map[box['annotation']]]
+					self.boxes_to_render.append(bounding_box)
+
+		#Add Pred Boxes we should render
+		if self.show_pred is True:
+			if self.pred_frames > 0:
+				for box in self.temp_pred_boxes['boxes']:
+					if box['confidence'] >= self.min_confidence:
+						bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
+						self.boxes_to_render.append(bounding_box)
+
+		
 
 	def update(self):
 		""" This updates the window object to reflect the current state

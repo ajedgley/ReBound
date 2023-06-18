@@ -130,7 +130,7 @@ class Window:
         self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
         self.boxes = json.load(open(self.path_string))
         # num of frames available to display
-        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding")) if entry.name != ".DS_Store"] # ignore .DS_Store (MacOS)
         self.num_frames = len(frames_available)
         # List to store bounding boxes as NuScenes Box Objects
         self.n_boxes = []
@@ -460,7 +460,7 @@ class Window:
                         color, 2)
 
                 #Only render confidence if this isnt at GT box        
-                if b[CONFIDENCE] < 100 and self.show_score:
+                if b[CONFIDENCE] <= 100 and self.show_score:
                     cv2.putText(self.image, str(b[CONFIDENCE]), (int(corners.T[0][0]), int(corners.T[1][1])), cv2.FONT_HERSHEY_SIMPLEX ,1, (255,0,0), 2)
 
         new_image = o3d.geometry.Image(self.image)
@@ -641,7 +641,7 @@ class Window:
 
             self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
             self.boxes_in_scene.append(bounding_box)
-            if box[CONFIDENCE] < 100 and self.show_score:
+            if box[CONFIDENCE] <= 100 and self.show_score:
                 label = self.widget3d.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
                 label.color = gui.Color(1.0,0.0,0.0)
                 self.label_list.append(label)
