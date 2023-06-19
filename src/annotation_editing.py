@@ -156,6 +156,7 @@ class Annotation:
 
 		# hardcoding to test
 		self.min_confidence = 0
+		self.current_confidence = 0
 
 		""" confidence threshold in edit mode """
 		# # Set up a widget to specify a minimum annotation confidence
@@ -317,15 +318,15 @@ class Annotation:
 		annot_vert.add_child(annot_type)
 		annot_vert.add_child(annot_class)
 		annot_vert.add_child(add_custom_horiz)
-
+		
+		# widget to set confidence of predicted boxes as 101 for active learning
 		conf_vert = gui.CollapsableVert("Confidence")
-		self.confidence_set = gui.NumberEdit(gui.NumberEdit.Type.INT)
-		self.confidence_set.set_limits(0,101)
-		self.confidence_set.set_value(51)
+		self.confidence_set = gui.Checkbox("Change confidence to 101")
+		self.confidence_set.set_on_checked(self.confidence_set_handler)
 		
 		# Add confidence set widget to horizontal
 		confidence_set_layout = gui.Horiz()
-		confidence_set_layout.add_child(gui.Label("Specify (Pred) Confidence Value"))
+		confidence_set_layout.add_child(gui.Label("Set Pred box as GT:"))
 		confidence_set_layout.add_child(self.confidence_set)
 		conf_vert.add_child(confidence_set_layout)
 		
@@ -635,6 +636,7 @@ class Annotation:
 		self.update_boxes_to_render()
 
 		self.previous_index = -1
+		self.current_confidence = 0
 		self.box_selected = None
 		self.update_props()
 		self.update_poses()
@@ -653,8 +655,7 @@ class Annotation:
 		print(len(self.temp_pred_boxes["boxes"]))
 		print(len(self.volumes_in_scene))
 		print(len(self.boxes_to_render))
-		self.confidence_set.set_value(int(self.boxes_to_render[box_index][CONFIDENCE]))
-		
+		self.current_confidence = self.temp_pred_boxes["boxes"][box_index]["confidence"]
 		if self.show_gt:
 			try:
 				self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
@@ -699,7 +700,7 @@ class Annotation:
 	def update_props(self):
 		# Enables or disables boxes, depending on whether box is currently selected
 		boxes = [self.annotation_class, self.trans_x, self.trans_y, self.trans_z, self.rot_x, self.rot_y, self.rot_z, self.scale_x, self.scale_y,
-			self.scale_z, self.delete_annotation_button]
+			self.scale_z, self.delete_annotation_button, self.confidence_set]
 		enabled = False
 		if self.box_selected is not None:
 			enabled = True
@@ -713,6 +714,11 @@ class Annotation:
 				boxes[i].double_value = 0
 			self.cw.post_redraw()
 			return -1
+		
+		if self.show_pred and self.box_selected is not None:
+			self.confidence_set.enabled = True
+		else:
+			self.confidence_set.enabled = False
 
 		annot_type = gui.Horiz()
 		annot_type.add_child(gui.Label("Type:"))
@@ -1190,6 +1196,20 @@ class Annotation:
 		if int(new_val) >= 0 and int(new_val) <= 101:
 			self.min_confidence = int(new_val)
 			self.update()
+	
+	def confidence_set_handler(self, bool_value):
+		print("second: ", bool_value)
+		current_box = self.previous_index
+		if self.show_gt:
+			return
+		if current_box == -1:
+			return
+		if self.temp_pred_boxes["boxes"][current_box]["confidence"] != 101:
+			self.temp_pred_boxes["boxes"][current_box]["confidence"] = 101
+		else:
+			self.temp_pred_boxes["boxes"][current_box]["confidence"] = self.current_confidence
+		
+
 
 	def toggle_bounding(self, new_val, new_idx):
 		"""This updates the bounding box on the window to reflect either bounding or predicted bounding
@@ -1206,10 +1226,12 @@ class Annotation:
 		if new_val == "Predicted" and self.pred_frames > 0:
 			self.show_pred = True
 			self.show_gt = False
+			self.previous_index = -1
 			self.update()
 		else: # switched to ground truth boxes
 			self.show_pred = False
 			self.show_gt = True
+			self.previous_index = -1
 			self.update()
 	
 	def jump_to_vehicle(self):
