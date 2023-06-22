@@ -302,6 +302,12 @@ class Annotation:
 		self.tracking_id_set.placeholder_text = "Select a box"
 		tracking_id_layout.add_child(self.tracking_id_set)
 		tracking_vert.add_child(tracking_id_layout)
+		self.box_trajectory_checkbox = gui.Checkbox("Show Trajectory")
+		self.box_trajectory_checkbox.set_on_checked(self.show_trajectory)
+		box_trajectory_layout = gui.Horiz(0.50 * em, margin)
+		box_trajectory_layout.add_child(self.box_trajectory_checkbox)
+		tracking_vert.add_child(box_trajectory_layout)
+		self.box_trajectory_checkbox.enabled = False
 
 		annot_type = gui.Horiz(0.50 * em, margin)
 		annot_type.add_child(gui.Label("Type:"))
@@ -446,7 +452,7 @@ class Annotation:
 		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
 		if self.show_gt:
 			uuid_str = str(uuid.uuid4())
-			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, "", 0, {"propagate": True, "uuid": uuid_str})
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, uuid_str, 0, {"propagate": True,})
 			self.temp_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
 						  box['confidence'], self.color_map[box['annotation']]]
@@ -454,12 +460,12 @@ class Annotation:
 		else:
 			uuid_str = str(uuid.uuid4())
 			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value ,
-				  						   "", 0, {"propagate": True, "uuid": uuid_str})
+				  						   uuid_str, 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
 						  box['confidence'], self.pred_color_map[box['annotation']]]
 			self.boxes_to_render.append(render_box)
-			# TODO: boxes_to_render? uuids?
+			# TODO: how to specify confidence value of a new pred box?
 
 		self.tracking_id_set.text_value = uuid_str
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
@@ -632,6 +638,10 @@ class Annotation:
 			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
 			self.scene_widget.scene.show_geometry(self.coord_frame, False)
 
+		self.box_trajectory_checkbox.checked = False
+		self.box_trajectory_checkbox.enabled = False
+		self.tracking_id_set.text_value = ""
+		self.show_trajectory(False)
 		self.point_cloud.post_redraw()
 		self.update_boxes_to_render()
 
@@ -646,7 +656,8 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
+			self.deselect_box()
+			# self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
@@ -656,14 +667,15 @@ class Annotation:
 		print(len(self.volumes_in_scene))
 		print(len(self.boxes_to_render))
 		self.current_confidence = self.temp_pred_boxes["boxes"][box_index]["confidence"]
+		self.tracking_id_set.enabled = True
 		if self.show_gt:
 			try:
-				self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["data"]["uuid"]
+				self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["id"]
 			except KeyError:
 				self.tracking_id_set.text_value = "No ID"
 		else:
 			try:
-				self.tracking_id_set.text_value = self.temp_pred_boxes["boxes"][box_index]["data"]["uuid"]
+				self.tracking_id_set.text_value = self.temp_pred_boxes["boxes"][box_index]["id"]
 			except KeyError:
 				self.tracking_id_set.text_value = "No ID"
 		box = self.box_indices[box_index]
@@ -672,6 +684,7 @@ class Annotation:
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, self.line_mat_highlight)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, self.coord_frame_mat, True)
 		self.scene_widget.force_redraw()
+		self.box_trajectory_checkbox.enabled = True
 		self.update_props()
 		self.update_poses()
 
@@ -715,10 +728,20 @@ class Annotation:
 			self.cw.post_redraw()
 			return -1
 		
-		if self.show_pred and self.box_selected is not None:
-			self.confidence_set.enabled = True
+		if self.show_pred:
+			if self.box_selected is not None:
+				self.confidence_set.enabled = True
+				self.box_trajectory_checkbox.enabled = False
+			else:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = False
 		else:
-			self.confidence_set.enabled = False
+			if self.box_selected is not None:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = True
+			else:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = False
 
 		annot_type = gui.Horiz()
 		annot_type.add_child(gui.Label("Type:"))
@@ -786,15 +809,30 @@ class Annotation:
 		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
 		if self.show_gt:
 			current_temp_box = self.temp_boxes["boxes"][self.previous_index]
-		else:
-			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
-
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, current_temp_box["data"])
-		
-		if self.show_gt:
+			updated_box_metadata = self.create_box_metadata(
+				box_to_rotate.center,
+				size,
+				result.elements,
+				current_temp_box["annotation"],
+				current_temp_box["confidence"],
+				current_temp_box["id"],
+				current_temp_box["internal_pts"],
+				current_temp_box["data"]
+			)
 			self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
 		else:
-			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata
+			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
+			updated_box_metadata = self.create_box_metadata(
+				box_to_rotate.center,
+				size,
+				result.elements,
+				current_temp_box["annotation"],
+				current_temp_box["confidence"],
+				"",
+				0,
+				current_temp_box["data"]
+			)
+			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata		
 		self.cw.post_redraw()
 
 	#redirects on_value_changed events to appropriate box transformation function
@@ -988,8 +1026,9 @@ class Annotation:
 				"rotation": rotation,
 				"annotation": label,
 				"confidence": confidence,
+				"id": ids,
 				"data": data
-				# TODO: Handle original IDs
+				# TODO: Handle original IDs : No IDs in pred_data
 			}
 
 		return {
@@ -1179,7 +1218,7 @@ class Annotation:
             # Set new frame value
 			self.frame_num = int(new_val)
 			self.frame_select.set_value(self.frame_num)
-			self.previous_index = -1
+			self.deselect_box()
             # Update Bounding Box List
 			self.update()
 	
@@ -1536,7 +1575,79 @@ class Annotation:
 		current_box["data"]["velocity"] = velocity.tolist()
 		print("velocity: ", velocity.tolist())
 		
+	def show_trajectory(self, bool_value):
+		# Load the annotations of this object from previous and next frames
+		if bool_value == False:
+			i = 0
+			while i < 8:
+				try:
+					rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'centroid' + str(i))
+					i += 1
+					if i != 0:
+						rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'segment' + str(i))
+				except:
+					break
+			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'final')
+			return
 
+		current_index = self.previous_index
+		if current_index == -1:
+			return
+		
+		if self.show_gt:
+			current_box = self.temp_boxes["boxes"][current_index]
+		# currently, id's for pred boxes are not stored
+		# else:
+		# 	current_box = self.temp_pred_boxes["boxes"][current_id]
+		object_id = current_box["id"]
+		centroid_global_origins = []
+
+		for i in range(-3, 4):
+			# Load the annotations of this object from previous and next frames
+			try:
+				boxes_i = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num + i), "boxes.json")))
+				extrinsics_i = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num + i) + ".json")))
+			except FileNotFoundError:
+				continue
+
+			for box in boxes_i["boxes"]:
+				if box["id"] == object_id:
+					print("found box", i)
+					# convert current origin to global frame
+					size = [0,0,0]
+					# Open3D wants sizes in L,W,H
+					size[0] = box["size"][1]
+					size[1] = box["size"][0]
+					size[2] = box["size"][2]
+					bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+					bounding_box.rotate(Quaternion(extrinsics_i['rotation']).rotation_matrix, [0,0,0])
+					bounding_box.translate(np.array(extrinsics_i['translation']))
+					centroid_global_origins.append(bounding_box.center)
+					break
+
+		for i in range(len(centroid_global_origins)):
+			centroid_fig = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+			centroid_fig.paint_uniform_color([1, 0, 1])
+			centroid_fig.translate(centroid_global_origins[i])
+			centroid_mat = rendering.MaterialRecord()
+			if i != 0:
+				segment_fig = o3d.geometry.LineSet()
+				segment_fig.points = o3d.utility.Vector3dVector([centroid_global_origins[i-1], centroid_global_origins[i]])
+				segment_fig.lines =  o3d.utility.Vector2iVector([[0,1]])
+				segment_fig.colors = o3d.utility.Vector3dVector([[1, 0, 1]])
+				segment_mat = rendering.MaterialRecord()
+				segment_mat.shader = "unlitLine"
+				segment_mat.line_width = 0.5
+				self.scene_widget.scene.add_geometry('segment' + str(i), segment_fig, segment_mat)
+			self.scene_widget.scene.add_geometry('centroid' + str(i), centroid_fig, centroid_mat)
+		final_fig = o3d.geometry.LineSet()
+		final_fig.points = o3d.utility.Vector3dVector([centroid_global_origins[0], centroid_global_origins[-1]])
+		final_fig.lines =  o3d.utility.Vector2iVector([[0,1]])
+		final_fig.colors = o3d.utility.Vector3dVector([[1, 1, 1]])
+		final_mat = rendering.MaterialRecord()
+		final_mat.shader = "unlitLine"
+		final_mat.line_width = 0.5
+		self.scene_widget.scene.add_geometry('final', final_fig, final_mat)
 
 	# restarts the program in order to exit
 	def exit_annotation_mode(self):
