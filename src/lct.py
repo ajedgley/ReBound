@@ -318,6 +318,7 @@ class Window:
         file_menu = gui.Menu()
         file_menu.add_item("Export Current RGB Image...", 0)
         file_menu.add_item("Export Current PointCloud...", 1)
+        file_menu.add_item("Export PointCloud Video of the Scene...", 5)
         file_menu.add_separator()
         file_menu.add_item("Quit", 2)
 
@@ -376,6 +377,7 @@ class Window:
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
         cw.set_on_menu_item_activated(4, self.on_annotation_start)
+        cw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
 	
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
@@ -384,6 +386,7 @@ class Window:
         # Originally read 'cw.set_on_menu...', I think it's a bug?
         iw.set_on_menu_item_activated(3, self.on_error_scan)
         iw.set_on_menu_item_activated(4, self.on_annotation_start)
+        iw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
 
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
@@ -392,6 +395,7 @@ class Window:
         # Originally read 'cw.set_on_menu...', I think it's a bug?
         pw.set_on_menu_item_activated(3, self.on_error_scan)
         pw.set_on_menu_item_activated(4, self.on_annotation_start)
+        pw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
     
 
         # Call update function to draw all initial data
@@ -954,7 +958,139 @@ class Window:
         self.widget3d.scene.scene.render_to_image(on_image)
         self.update()
 
-    
+    def on_menu_export_video_lidar(self):
+        file_dialog = gui.FileDialog(gui.FileDialog.SAVE, "Choose file to save", self.controls.theme)
+        # file_dialog.add_filter(".mp4", "MP4 files (.mp4)")
+        file_dialog.set_on_cancel(self.on_file_dialog_cancel)
+        file_dialog.set_on_done(self.on_export_video_lidar_dialog_done)
+        self.controls.show_dialog(file_dialog)
+
+    def on_export_video_lidar_dialog_done(self, filename):
+        self.controls.close_dialog()
+        middle_frame = self.num_frames // 2
+        middle_extrinsics = json.load(open(os.path.join(self.lct_path, "ego", str(middle_frame) + ".json")))
+        eye = [0,0,0]
+        eye[0] = middle_extrinsics['translation'][0]
+        eye[1] = middle_extrinsics['translation'][1]
+        eye[2] = 75
+        image_folder = filename + '_temp'
+        os.mkdir(image_folder)
+        self.off_renderer = o3d.visualization.rendering.OffscreenRenderer(width=1600, height=1200)
+        for cur_frame in range(0, self.num_frames):
+            self.export_lidar_frame(filename, cur_frame, middle_extrinsics, eye)
+        
+        video_name = filename + '.mp4'
+        _fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        images = []
+        for cur_frame in range(0, self.num_frames):
+            images.append(f'{filename}_temp/{cur_frame:03d}.png')
+        frame = cv2.imread(os.path.join(image_folder, images[0]))
+        height, width, layers = frame.shape
+
+        video = cv2.VideoWriter(video_name, _fourcc, 2, (width,height))
+
+        for image in images:
+            video.write(cv2.imread(os.path.join(image_folder, image)))
+
+        cv2.destroyAllWindows()
+        video.release()
+
+        # remove all png files
+        for cur_frame in range(0, self.num_frames):
+            os.remove(filename + f'_temp/{cur_frame:03d}.png')
+
+        # remove temp folder
+        os.rmdir(filename + f'_temp/')
+
+        self.update()
+
+
+    def export_lidar_frame(self, filename, cur_frame, middle_extrinsics, eye):
+        # get extrinsics of current frame
+        cur_frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(cur_frame) + ".json")))
+        self.off_renderer.scene.set_view_size(1600, 1200)
+        
+        paths_pcd = []
+        for sensor in self.lidar_sensors:
+            paths_pcd.append(os.path.join(self.lct_path, "pointcloud", sensor, str(cur_frame) + ".pcd"))
+        print(paths_pcd)
+        temp_points = np.empty((0,3))
+        # get pointcloud of current frame:
+        for i, path in enumerate(paths_pcd):
+            temp_cloud = o3d.io.read_point_cloud(path)
+            ego_rotation_matrix = Quaternion(cur_frame_extrinsic['rotation']).rotation_matrix
+            # Transform lidar points into global frame
+            print('here')
+            temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
+            temp_cloud.translate(np.array(cur_frame_extrinsic['translation']))
+            temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
+ 
+        pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
+        # Add new global frame pointcloud to our 3D widget
+        mat = rendering.MaterialRecord()
+        mat.shader = "defaultUnlit"
+        mat.point_size = 1.5
+        self.off_renderer.scene.add_geometry("Point Cloud", pointcloud, mat)
+
+        #Array that will hold list of boxes that will eventually be rendered
+        gt_boxes = []
+        
+        boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(cur_frame), "boxes.json")))
+        for box in boxes['boxes']:
+            bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+                            box['confidence'], self.color_map[box['annotation']]]
+            gt_boxes.append(bounding_box)
+
+        i = 0
+        mat = rendering.MaterialRecord()
+        mat.shader = "unlitLine"
+        mat.line_width = 1.5
+
+        for box in gt_boxes:
+            size = [0,0,0]
+            # Open3D wants sizes in L,W,H
+            size[0] = box[SIZE][1]
+            size[1] = box[SIZE][0]
+            size[2] = box[SIZE][2]
+            color = box[COLOR]
+            bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
+            bounding_box.rotate(Quaternion(cur_frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+            bounding_box.translate(np.array(cur_frame_extrinsic['translation']))
+            hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+            bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+            self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
+            self.boxes_in_scene.append(bounding_box)
+
+            self.off_renderer.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
+            i += 1
+
+        #Add Line that indicates current RGB Camera View
+        line = o3d.geometry.LineSet()
+        line.points = o3d.utility.Vector3dVector([[0,0,0], [0,0,2]])
+        line.lines =  o3d.utility.Vector2iVector([[0,1]])
+        line.colors = o3d.utility.Vector3dVector([[1.0,0,0]])
+     
+        line.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0,0,0])
+        line.translate(self.image_extrinsic['translation'])      
+        
+        line.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+        line.translate(self.frame_extrinsic['translation'])
+        
+        self.off_renderer.scene.add_geometry("RGB Line",line, mat)
+
+        # off_renderer.scene.scene.update_geometry()
+        self.off_renderer.scene.set_background([0,0,0,255])
+        # Set camera position
+        self.off_renderer.scene.camera.look_at(middle_extrinsics['translation'], eye, [1, 0, 0])
+
+        rendered_image = o3d.geometry.Image()
+        rendered_image = self.off_renderer.render_to_image()
+        o3d.io.write_image(filename + f'_temp/{cur_frame:03d}.png', rendered_image)
+        
+        self.off_renderer.scene.clear_geometry()
+        print("Done exporting image", cur_frame)    
+
 
     def on_error_scan(self):
 
