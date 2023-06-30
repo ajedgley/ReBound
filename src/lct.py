@@ -987,7 +987,7 @@ class Window:
         frame = cv2.imread(os.path.join(image_folder, images[0]))
         height, width, layers = frame.shape
 
-        video = cv2.VideoWriter(video_name, _fourcc, 2, (width,height))
+        video = cv2.VideoWriter(video_name, _fourcc, 3, (width, height))
 
         for image in images:
             video.write(cv2.imread(os.path.join(image_folder, image)))
