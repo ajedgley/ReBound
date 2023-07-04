@@ -115,8 +115,8 @@ def extract_frame(frame_num, input_path):
             data["size"] = bounding_box["size"]
             data["rotation"] = box.orientation.q.tolist()
             # Calculating num_lidar_pts and num_radar_pts may be expensive
-            data["num_lidar_pts"] = geometry_utils.compute_interior_points(bounding_box, pcd)
-            # data["num_lidar_pts"] = bounding_box["internal_pts"]
+            # data["num_lidar_pts"] = geometry_utils.compute_interior_points(bounding_box, pcd)
+            data["num_lidar_pts"] = bounding_box["internal_pts"]
             data["num_radar_pts"] = 0
         # Update this later
         data["prev"] = "" 
@@ -159,6 +159,65 @@ def extract_frame(frame_num, input_path):
             new_annotation[prev_ann_token[instance_token]]["next"] = ann_token
             new_annotation[ann_token]["prev"] = prev_ann_token[instance_token]
             prev_ann_token[instance_token] = ann_token
+    
+    try:
+        with open(input_path + "/pred_bounding/" + str(frame_num) + "/boxes.json") as f:
+            pred_bounding = json.load(f)
+    except FileNotFoundError:
+        return
+    except:
+        print("Error in reading pred_bounding")
+
+    for i in range(len(pred_bounding["boxes"])):
+        # TODO: Check if this is correct
+        # {
+        #     "sample_token": "fd8420396768425eabec9bdddf7e64b6",
+        #     "translation": [238.57214252174225, 913.5663813237325, 0.9172307699265726],
+        #     "size": [1.8871897459030151, 4.666365146636963, 1.6081377267837524],
+        #     "rotation": [-0.0540253886373565, -0.014531088421748212, -0.005025391842621043, -0.9984211788061649],
+        #     "velocity": [5.048375841727712e-09, -5.2203639789370956e-09],
+        #     "detection_name": "car",
+        #     "detection_score": 0.8652197122573853,
+        #     "attribute_name": "vehicle.parked"
+        # }
+
+        # {
+        #     "origin": [-22.050718317067304, 3.3065296145025136, 1.0352662056374502],
+        #     "size": [1.8986321687698364, 4.532073974609375, 1.7502126693725586],
+        #     "rotation": [0.0017772452267606764, -0.023118258647961677, 0.0015290054192990087, -0.9997299883763203],
+        #     "annotation": "car",
+        #     "confidence": 75,
+        #     "data": {
+        #                 "propagate": False
+        #             }
+        # }
+        pred_data = {}
+        # Reverting bounding box
+        bounding_box = pred_bounding["boxes"][i]
+        box = Box(bounding_box["origin"], bounding_box["size"], Quaternion(bounding_box["rotation"]))
+        box.rotate(Quaternion(ego["rotation"]))
+        box.translate(np.array(ego["translation"]))
+
+        sample_token = timestamps[frame_num]
+        pred_data["sample_token"] = sample_token
+        
+        pred_data["translation"] = box.center.tolist()
+        pred_data["size"] = bounding_box["size"]
+        pred_data["rotation"] = box.orientation.q.tolist()
+
+        pred_data["detection_name"] = bounding_box["annotation"]
+        pred_data["detection_score"] = bounding_box["confidence"] / 100
+        pred_data["attribute_name"] = bounding_box["data"]["attribute"]
+        pred_data["velocity"] = bounding_box["data"]["pred_velocity"]
+
+        if "results" in new_predictions:
+            if sample_token in new_predictions["results"]:
+                new_predictions["results"][sample_token].append(pred_data)
+            else:
+                new_predictions["results"][sample_token] = [pred_data]
+        else:
+            new_predictions["results"] = {sample_token: [pred_data]}
+
 
 def revert_dataset(input_path, output_path):
     # Setup progress bar
@@ -185,6 +244,9 @@ def revert_dataset(input_path, output_path):
         json.dump(list(category.values()), f, indent=0)
     with open(output_path + "/instance.json","w") as f:
         json.dump(list(new_instance.values()), f, indent=0)
+    if pred_path is not None and pred_path != "":
+        with open(pred_path + "/predictions.json","w") as f:
+            json.dump(new_predictions, f, indent=0)
 
 if __name__ == "__main__":
     # Read in input database and output directory paths
@@ -222,11 +284,18 @@ if __name__ == "__main__":
         instance = {}
         for i in range(len(data)):
             instance[data[i]["token"]] = data[i]
+    # if pred_path != "":
+    #     with open(pred_path + "/predictions.json") as f:
+    #         data = json.load(f)
+    #         pred = {}
+    #         for i in range(len(data)):
+    #             pred[data[i]["token"]] = data[i]
     # Recreating annotation and instance
     new_annotation = {}
     new_instance = {}
     # Keeping track of previous ann_token for each instance
     prev_ann_token = {}
+    new_predictions = {}
 
     # If this was blank, then revert all scenes
     if len(scene_names) == 0:
@@ -254,4 +323,5 @@ if __name__ == "__main__":
         with open(input_path + scene_name + "/timestamps.json") as f:
             data = json.load(f)
             timestamps = data["timestamps"]
+        print("Reverting scene: " + scene_name)
         revert_dataset(input_path + scene_name + "/", output_path + ver_name)

@@ -22,7 +22,8 @@ import json
 import cv2
 from lct import Window
 import platform
-import uuid
+# import uuid
+import secrets
 
 from copy import deepcopy
 
@@ -451,21 +452,22 @@ class Annotation:
 		result = Quaternion(matrix=box_to_rotate.R)
 		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
 		if self.show_gt:
-			uuid_str = str(uuid.uuid4())
+			# uuid_str = str(uuid.uuid4())
+			uuid_str = secrets.token_hex(16)
 			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, uuid_str, 0, {"propagate": True,})
 			self.temp_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
 						  box['confidence'], self.color_map[box['annotation']]]
 			self.boxes_to_render.append(render_box)
 		else:
-			uuid_str = str(uuid.uuid4())
-			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], self.confidence_set.int_value ,
+			# uuid_str = str(uuid.uuid4())
+			uuid_str = secrets.token_hex(16)
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101,
 				  						   uuid_str, 0, {"propagate": True,})
 			self.temp_pred_boxes['boxes'].append(box)
 			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
 						  box['confidence'], self.pred_color_map[box['annotation']]]
 			self.boxes_to_render.append(render_box)
-			# TODO: how to specify confidence value of a new pred box?
 
 		self.tracking_id_set.text_value = uuid_str
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
@@ -661,11 +663,6 @@ class Annotation:
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
-		print(box_index)
-		# print("temp box:", self.temp_pred_boxes["boxes"][box_index])
-		print(len(self.temp_pred_boxes["boxes"]))
-		print(len(self.volumes_in_scene))
-		print(len(self.boxes_to_render))
 		self.current_confidence = self.temp_pred_boxes["boxes"][box_index]["confidence"]
 		self.tracking_id_set.enabled = True
 		if self.show_gt:
@@ -1028,7 +1025,7 @@ class Annotation:
 				"confidence": confidence,
 				"id": ids,
 				"data": data
-				# TODO: Handle original IDs : No IDs in pred_data
+				# TODO: Handle original IDs : No IDs in original pred data
 			}
 
 		return {
@@ -1237,7 +1234,6 @@ class Annotation:
 			self.update()
 	
 	def confidence_set_handler(self, bool_value):
-		print("second: ", bool_value)
 		current_box = self.previous_index
 		if self.show_gt:
 			return
@@ -1393,7 +1389,6 @@ class Annotation:
 		old_pred_boxes = json.load(open(old_pred_boxes_path))
 		old_gt_boxes = json.load(open(old_gt_boxes_path))
 
-		print(self.temp_pred_boxes["boxes"][0]["data"]["propagate"])
 		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if (box not in old_gt_boxes["boxes"] and box["data"]["propagate"]==True)]
 		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if (box not in old_pred_boxes["boxes"] and box["data"]["propagate"]==True)]
 
@@ -1425,7 +1420,6 @@ class Annotation:
 			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
 												  box["confidence"], box["id"], box["internal_pts"], box["data"])
 
-			print(global_box)
 
 			global_new_gt_boxes.append(global_box)
 		
@@ -1447,7 +1441,6 @@ class Annotation:
 												  box["confidence"], "", 0, box["data"])
 
 
-			print(global_box)
 
 			global_new_pred_boxes.append(global_box)
 
@@ -1471,9 +1464,6 @@ class Annotation:
 			if self.source_format == "nuScenes":
 				delta_time = 0.5 # TODO: add other datasets
 
-			print("velocity: ", velocity)
-			print("delta_time: ", delta_time)
-			print("box origin: ", box["origin"])
 			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
 
 			bounding_box = o3d.geometry.OrientedBoundingBox(projected_origin, Quaternion(box["rotation"]).rotation_matrix, size)
@@ -1489,8 +1479,6 @@ class Annotation:
 			ego_box['data']['prev_origin'] = box["origin"] # stores the current origin in the global frame
 			
 			self.propagated_gt_boxes.append(ego_box)
-
-			print('ego box: ', ego_box)
 		
 		for box in global_new_pred_boxes:
 			size = [0,0,0]
@@ -1522,14 +1510,12 @@ class Annotation:
 			
 			self.propagated_pred_boxes.append(ego_box)
 
-			print('ego box: ', ego_box)
-
 
 		# should have propagate = true
-		print("propagated gt boxes: ", self.propagated_gt_boxes)
-		print("propagated pred boxes: ", self.propagated_pred_boxes)
-		print("prev gt boxes: ", prev_gt_boxes)
-		print("prev pred boxes: ", prev_pred_boxes)
+		# print("propagated gt boxes: ", self.propagated_gt_boxes)
+		# print("propagated pred boxes: ", self.propagated_pred_boxes)
+		# print("prev gt boxes: ", prev_gt_boxes)
+		# print("prev pred boxes: ", prev_pred_boxes)
 
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
@@ -1573,7 +1559,6 @@ class Annotation:
 		velocity = delta_pos / delta_time
 
 		current_box["data"]["velocity"] = velocity.tolist()
-		print("velocity: ", velocity.tolist())
 		
 	def show_trajectory(self, bool_value):
 		# Load the annotations of this object from previous and next frames
@@ -1587,7 +1572,8 @@ class Annotation:
 						rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'segment' + str(i))
 				except:
 					break
-			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'final')
+			# remove the refernce line
+			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'reference')
 			return
 
 		current_index = self.previous_index
@@ -1596,10 +1582,14 @@ class Annotation:
 		
 		if self.show_gt:
 			current_box = self.temp_boxes["boxes"][current_index]
-		# currently, id's for pred boxes are not stored
-		# else:
-		# 	current_box = self.temp_pred_boxes["boxes"][current_id]
-		object_id = current_box["id"]
+			object_id = current_box["id"]
+		# currently, id's for original pred boxes are not stored
+		else:
+			current_box = self.temp_pred_boxes["boxes"][current_index]
+			if "id" in current_box.keys() and current_box["id"] != None and current_box["id"] != "":
+				object_id = current_box["id"]
+			else:
+				return
 		centroid_global_origins = []
 
 		for i in range(-3, 4):
@@ -1612,7 +1602,6 @@ class Annotation:
 
 			for box in boxes_i["boxes"]:
 				if box["id"] == object_id:
-					print("found box", i)
 					# convert current origin to global frame
 					size = [0,0,0]
 					# Open3D wants sizes in L,W,H
@@ -1640,6 +1629,7 @@ class Annotation:
 				segment_mat.line_width = 0.5
 				self.scene_widget.scene.add_geometry('segment' + str(i), segment_fig, segment_mat)
 			self.scene_widget.scene.add_geometry('centroid' + str(i), centroid_fig, centroid_mat)
+
 		final_fig = o3d.geometry.LineSet()
 		final_fig.points = o3d.utility.Vector3dVector([centroid_global_origins[0], centroid_global_origins[-1]])
 		final_fig.lines =  o3d.utility.Vector2iVector([[0,1]])
@@ -1647,7 +1637,8 @@ class Annotation:
 		final_mat = rendering.MaterialRecord()
 		final_mat.shader = "unlitLine"
 		final_mat.line_width = 0.5
-		self.scene_widget.scene.add_geometry('final', final_fig, final_mat)
+		# the reference line connecting the first and last centroids
+		self.scene_widget.scene.add_geometry('reference', final_fig, final_mat)
 
 	# restarts the program in order to exit
 	def exit_annotation_mode(self):
