@@ -159,18 +159,6 @@ class Annotation:
 		self.min_confidence = 0
 		self.current_confidence = 0
 
-		""" confidence threshold in edit mode """
-		# # Set up a widget to specify a minimum annotation confidence
-		# confidence_select = gui.NumberEdit(gui.NumberEdit.INT)
-		# confidence_select.set_limits(0,100)
-		# confidence_select.set_value(50)
-		# confidence_select.set_on_value_changed(self.on_confidence_switch)
-
-		# # Add confidence select widget to horizontal
-		# confidence_select_layout = gui.Horiz()
-		# confidence_select_layout.add_child(gui.Label("Specify (Pred) Confidence Threshold"))
-		# confidence_select_layout.add_child(confidence_select)
-
 		# Add combobox to switch between predicted and ground truth
 		self.bounding_toggle = gui.Combobox()
 		self.bounding_toggle.add_item("Predicted")
@@ -1420,7 +1408,6 @@ class Annotation:
 			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
 												  box["confidence"], box["id"], box["internal_pts"], box["data"])
 
-
 			global_new_gt_boxes.append(global_box)
 		
 		global_new_pred_boxes = []
@@ -1439,8 +1426,6 @@ class Annotation:
 			
 			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
 												  box["confidence"], "", 0, box["data"])
-
-
 
 			global_new_pred_boxes.append(global_box)
 
@@ -1507,20 +1492,14 @@ class Annotation:
 			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
 			ego_box['data']['prev_origin'] = box['origin'] # stores the previous origin in the global frame
 			
-			
 			self.propagated_pred_boxes.append(ego_box)
 
-
-		# should have propagate = true
-		# print("propagated gt boxes: ", self.propagated_gt_boxes)
-		# print("propagated pred boxes: ", self.propagated_pred_boxes)
-		# print("prev gt boxes: ", prev_gt_boxes)
-		# print("prev pred boxes: ", prev_pred_boxes)
 
 		new_val = self.frame_num + 1
 		self.on_frame_switch(new_val)
 
 	def set_velocity(self):
+		# set the velocity based on the difference in coordinates between the current and previous frame
 		current_id = self.previous_index
 		if current_id == -1:
 			return
@@ -1742,7 +1721,6 @@ class Annotation:
 			self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
 			self.boxes_in_scene.append(bounding_box)
 
-			# might be useful later
 			# if box[CONFIDENCE] < 100 and self.show_score:
 			# 	label = self.scene_widget.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
 			# 	label.color = gui.Color(1.0,0.0,0.0)

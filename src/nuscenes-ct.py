@@ -209,6 +209,7 @@ def extract_pred_bounding(nusc, scene_token, sample, output_path, pred_data):
             confidences.append(int(data['detection_score'] * 100))
             velocities.append(data['velocity'])
             attributes.append(data['attribute_name'])
+        # auxiliary data to export predictions
         aux_data = {"pred_velocity":velocities, "attribute":attributes}
         dataformat_utils.create_frame_bounding_directory(output_path, frame_num, origins, sizes, rotations, annotation_names, confidences, None, None, predicted=True, data=aux_data)
         frame_num += 1

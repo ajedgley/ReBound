@@ -169,28 +169,6 @@ def extract_frame(frame_num, input_path):
         print("Error in reading pred_bounding")
 
     for i in range(len(pred_bounding["boxes"])):
-        # TODO: Check if this is correct
-        # {
-        #     "sample_token": "fd8420396768425eabec9bdddf7e64b6",
-        #     "translation": [238.57214252174225, 913.5663813237325, 0.9172307699265726],
-        #     "size": [1.8871897459030151, 4.666365146636963, 1.6081377267837524],
-        #     "rotation": [-0.0540253886373565, -0.014531088421748212, -0.005025391842621043, -0.9984211788061649],
-        #     "velocity": [5.048375841727712e-09, -5.2203639789370956e-09],
-        #     "detection_name": "car",
-        #     "detection_score": 0.8652197122573853,
-        #     "attribute_name": "vehicle.parked"
-        # }
-
-        # {
-        #     "origin": [-22.050718317067304, 3.3065296145025136, 1.0352662056374502],
-        #     "size": [1.8986321687698364, 4.532073974609375, 1.7502126693725586],
-        #     "rotation": [0.0017772452267606764, -0.023118258647961677, 0.0015290054192990087, -0.9997299883763203],
-        #     "annotation": "car",
-        #     "confidence": 75,
-        #     "data": {
-        #                 "propagate": False
-        #             }
-        # }
         pred_data = {}
         # Reverting bounding box
         bounding_box = pred_bounding["boxes"][i]
@@ -284,12 +262,6 @@ if __name__ == "__main__":
         instance = {}
         for i in range(len(data)):
             instance[data[i]["token"]] = data[i]
-    # if pred_path != "":
-    #     with open(pred_path + "/predictions.json") as f:
-    #         data = json.load(f)
-    #         pred = {}
-    #         for i in range(len(data)):
-    #             pred[data[i]["token"]] = data[i]
     # Recreating annotation and instance
     new_annotation = {}
     new_instance = {}
