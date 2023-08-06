@@ -22,6 +22,8 @@ import json
 import cv2
 from lct import Window
 import platform
+# import uuid
+import secrets
 
 from copy import deepcopy
 
@@ -36,9 +38,9 @@ COLOR = 5
 
 class Annotation:
 	# returns created window with all its buttons and whatnot
-	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, boxes_to_render,
+	def __init__(self, scene_widget, point_cloud, frame_extrinsic, boxes, pred_boxes, boxes_to_render,
 				 boxes_in_scene, box_indices, annotation_types, path, color_map, pred_color_map,
-				 image_window, image_widget, lct_path, frame_num, camera_sensors):
+				 image_window, image_widget, lct_path, frame_num, camera_sensors, lidar_sensors):
 		self.cw = gui.Application.instance.create_window("LCT", 400, 800)
 		self.scene_widget = scene_widget
 		self.point_cloud = point_cloud
@@ -46,7 +48,9 @@ class Annotation:
 		self.image_widget = image_widget
 		self.frame_extrinsic = frame_extrinsic
 		self.all_pred_annotations = annotation_types
+		self.all_gt_annotations = list(color_map.keys())
 		self.old_boxes = deepcopy(boxes)
+		self.old_pred_boxes = deepcopy(pred_boxes)
 		self.boxes_to_render = boxes_to_render 		#list of box metadata in scene
 		self.box_indices = box_indices 				#name references for bounding boxes in scene
 		self.boxes_in_scene = boxes_in_scene 		#current bounding box objects in scene
@@ -65,7 +69,11 @@ class Annotation:
 		self.image_h = self.image.height
 		self.image = np.asarray(self.image)
 
-		
+		self.lidar_sensors = lidar_sensors
+		self.lidar_sensor_name = lidar_sensors[0]
+		self.pcd_path = os.path.join(self.lct_path, "pointcloud", self.lidar_sensor_name, "0.pcd")
+		self.pcd_paths = []
+
 		self.box_selected = None
 		self.box_props_selected = [] #used for determining changes to property fields
 		self.curr_box_depth = 0.0
@@ -88,7 +96,13 @@ class Annotation:
 		self.coord_frame_mat = rendering.MaterialRecord()
 		self.coord_frame_mat.shader = "defaultUnlit"
 
+		self.pcd_mat = rendering.MaterialRecord()
+		self.pcd_mat.shader = "defaultUnlit"
+		self.pcd_mat.point_size = 2
+
 		self.coord_frame = "coord_frame"
+
+		self.source_format = json.load(open(os.path.join(self.lct_path, "metadata.json")))["source-format"]
 
 		# mouse and key event modifiers
 		self.z_drag = False
@@ -100,6 +114,7 @@ class Annotation:
 		
 		# modify temp boxes in this file, then when it's time to save use them to overwrite existing json
 		self.temp_boxes = boxes.copy()
+		self.temp_pred_boxes = pred_boxes.copy()
 
 		# used for adding new annotations
 		self.new_annotation_types = []
@@ -113,19 +128,82 @@ class Annotation:
 		margin = gui.Margins(0.50 * em, 0.25 * em, 0.50 * em, 0.25 * em)
 		layout = gui.Vert(0.50 * em, margin)
 
+		# num of frames available to display
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding")) if entry.name != ".DS_Store"] # ignore .DS_Store (MacOS)
+		self.num_frames = len(frames_available)
+
+		# switch between frames
+		self.frame_select = gui.NumberEdit(gui.NumberEdit.INT)
+		self.frame_select.set_limits(0, self.num_frames)
+		self.frame_select.set_value(self.frame_num)
+		self.frame_select.set_on_value_changed(self.on_frame_switch)
+
+		frame_switch_layout = gui.Horiz()
+		frame_switch_layout.add_child(gui.Label("Switch Frame"))
+		frame_switch_layout.add_child(self.frame_select)
+
+		# button to center pointcloud view on vehicle
+		center_horiz = gui.Horiz()
+		center_view_button = gui.Button("Center Pointcloud View on Vehicle")
+		center_view_button.set_on_clicked(self.jump_to_vehicle)
+		#center_horiz.add_child(gui.Label("Center Pointcloud View on Vehicle"))
+		center_horiz.add_child(center_view_button)
+
+		self.label_list = []
+
+		# default to showing predicted data while editing
+		self.show_gt = False
+		self.show_pred = True
+
+		# hardcoding to test
+		self.min_confidence = 0
+		self.current_confidence = 0
+
+		# Add combobox to switch between predicted and ground truth
+		self.bounding_toggle = gui.Combobox()
+		self.bounding_toggle.add_item("Predicted")
+		self.bounding_toggle.add_item("Ground Truth")
+		self.bounding_toggle.set_on_selection_changed(self.toggle_bounding)
+
+		bounding_toggle_layout = gui.Horiz()
+		bounding_toggle_layout.add_child(gui.Label("Toggle Predicted or GT"))
+		bounding_toggle_layout.add_child(self.bounding_toggle)
+
+		frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+		self.pred_frames = len(frames_available) - 1
+
+		self.propagated_gt_boxes = []
+		self.propagated_pred_boxes = []
+
 		# buttons for saving/saving as annotation changes
 		save_annotation_vert = gui.CollapsableVert("Save")
 		save_annotation_horiz = gui.Horiz(0.50 * em, margin)
 		save_annotation_button = gui.Button("Save Changes")
-		save_partial = functools.partial(self.save_changes_to_json, path=path)
+		save_partial = functools.partial(self.save_changes_to_json)
 		save_annotation_button.set_on_clicked(save_partial)
 		self.save_check = 0
 		save_as_button = gui.Button("Save As")
 		save_as_button.set_on_clicked(self.save_as)
+		save_and_prop_horiz = gui.Horiz(0.50 * em, margin)
+		save_and_prop_button = gui.Button("Save and Propagate New Boxes to Next Frame")
+		save_and_prop_to_next = functools.partial(self.save_and_propagate)
+		save_and_prop_button.set_on_clicked(save_and_prop_to_next)
+		set_velocity_horiz = gui.Horiz(0.50 * em, margin)
+		set_velocity_button = gui.Button("Set Velocity of Propagated Box")
+		set_velocity_button.set_on_clicked(self.set_velocity)
+		set_velocity_label_vert = gui.Vert(1 * em, margin)
+		set_velocity_label = gui.Label("(Box must be selected)")
+		set_velocity_label_vert.add_child(set_velocity_label)
+
 
 		save_annotation_horiz.add_child(save_annotation_button)
 		save_annotation_horiz.add_child(save_as_button)
+		save_and_prop_horiz.add_child(save_and_prop_button)
+		set_velocity_horiz.add_child(set_velocity_button)
+		set_velocity_horiz.add_child(set_velocity_label_vert)
 		save_annotation_vert.add_child(save_annotation_horiz)
+		save_annotation_vert.add_child(save_and_prop_horiz)
+		save_annotation_vert.add_child(set_velocity_horiz)
 
 		add_remove_vert = gui.CollapsableVert("Add/Delete")
 		add_box_button = gui.Button("Add Bounding Box")
@@ -179,7 +257,7 @@ class Annotation:
 		#the data fields are accessible to any function to allow easy manipulation during drag operations
 		properties_vert = gui.CollapsableVert("Properties", 0.25 * em, margin)
 		trans_collapse = gui.CollapsableVert("Position")
-		rot_collapse = gui.CollapsableVert("Rotation")
+		rot_collapse = gui.CollapsableVert("Rotation (specify change in degrees)")
 		scale_collapse = gui.CollapsableVert("Scale")
 
 		self.annotation_class = gui.Combobox()
@@ -205,6 +283,21 @@ class Annotation:
 		self.scale_z = gui.NumberEdit(gui.NumberEdit.Type.DOUBLE)
 		self.scale_z.set_on_value_changed(partial(self.property_change_handler, prop="scale", axis="z"))
 		
+		# Add tracking ID widget to horizontal
+		tracking_vert = gui.CollapsableVert("track_id")
+		tracking_id_layout = gui.Horiz(0.50 * em, margin)
+		tracking_id_layout.add_child(gui.Label("id: "))
+		self.tracking_id_set = gui.TextEdit()
+		self.tracking_id_set.placeholder_text = "Select a box"
+		tracking_id_layout.add_child(self.tracking_id_set)
+		tracking_vert.add_child(tracking_id_layout)
+		self.box_trajectory_checkbox = gui.Checkbox("Show Trajectory")
+		self.box_trajectory_checkbox.set_on_checked(self.show_trajectory)
+		box_trajectory_layout = gui.Horiz(0.50 * em, margin)
+		box_trajectory_layout.add_child(self.box_trajectory_checkbox)
+		tracking_vert.add_child(box_trajectory_layout)
+		self.box_trajectory_checkbox.enabled = False
+
 		annot_type = gui.Horiz(0.50 * em, margin)
 		annot_type.add_child(gui.Label("Type:"))
 		self.annotation_type = gui.Label("                       ")
@@ -220,6 +313,17 @@ class Annotation:
 		annot_vert.add_child(annot_type)
 		annot_vert.add_child(annot_class)
 		annot_vert.add_child(add_custom_horiz)
+		
+		# widget to set confidence of predicted boxes as 101 for active learning
+		conf_vert = gui.CollapsableVert("Confidence")
+		self.confidence_set = gui.Checkbox("Change confidence to 101")
+		self.confidence_set.set_on_checked(self.confidence_set_handler)
+		
+		# Add confidence set widget to horizontal
+		confidence_set_layout = gui.Horiz()
+		confidence_set_layout.add_child(gui.Label("Set Pred box as GT:"))
+		confidence_set_layout.add_child(self.confidence_set)
+		conf_vert.add_child(confidence_set_layout)
 		
 		trans_horiz = gui.Horiz(0.5 * em)
 		trans_horiz.add_child(gui.Label("X:"))
@@ -248,7 +352,9 @@ class Annotation:
 		scale_horiz.add_child(self.scale_z)
 		scale_collapse.add_child(scale_horiz)
 
+		properties_vert.add_child(tracking_vert)
 		properties_vert.add_child(annot_vert)
+		properties_vert.add_child(conf_vert)
 		properties_vert.add_child(trans_collapse)
 		properties_vert.add_child(rot_collapse)
 		properties_vert.add_child(scale_collapse)
@@ -261,6 +367,10 @@ class Annotation:
 
 		# adding all of the horiz to the vert, in order
 		layout.add_child(save_annotation_vert)
+		layout.add_child(frame_switch_layout)
+		layout.add_child(center_horiz)
+		# layout.add_child(confidence_select_layout)
+		layout.add_child(bounding_toggle_layout)
 		layout.add_child(add_remove_vert)
 		layout.add_child(tool_vert)
 		layout.add_child(toggle_camera_vert)
@@ -269,8 +379,10 @@ class Annotation:
 		layout.add_child(exit_annotation_horiz)
 
 		self.cw.add_child(layout)
-		self.update_props()
 		self.update_poses()
+		self.update_props()
+		self.update()
+
 		# Event handlers
 		
 		# sets up onclick box selection and drag interactions
@@ -303,7 +415,10 @@ class Annotation:
 		vol_size = [bbox_params[1][1], bbox_params[1][0], bbox_params[1][2]]
 		vol_params = [origin, vol_size, qtr.rotation_matrix]
 		bounding_box = o3d.geometry.OrientedBoundingBox(origin, qtr.rotation_matrix, size) #Creates bounding box object
-		color = self.pred_color_map[self.all_pred_annotations[0]]
+		if self.show_gt:
+			color = self.color_map[self.all_gt_annotations[0]]
+		else:
+			color = self.pred_color_map[self.all_pred_annotations[0]]
 		hex = '#%02x%02x%02x' % color
 		bounding_box.color = matplotlib.colors.to_rgb(hex) #will select color from annotation type list
 		bbox_name = "bbox_" + str(self.box_count)
@@ -316,12 +431,38 @@ class Annotation:
 		self.volumes_in_scene.append(volume_to_add)
 		volume_to_add.compute_vertex_normals()
 
-		box_object_data = self.create_box_metadata(origin, size, qtr.elements, self.all_pred_annotations[0], 101, "", 0, {})
-		self.temp_boxes['boxes'].append(box_object_data)
+		#simulates reversing the extrinsic transform and rotation to get the correct location of the object according
+		#to the boxes.json file
+		box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
+		reverse_extrinsic = Quaternion(self.frame_extrinsic['rotation']).inverse
+		box_to_rotate.translate(-np.array(self.frame_extrinsic['translation']))
+		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+		result = Quaternion(matrix=box_to_rotate.R)
+		size_flipped = [size[1], size[0], size[2]] #flip the x and y scale back
+		if self.show_gt:
+			# uuid_str = str(uuid.uuid4())
+			uuid_str = secrets.token_hex(16)
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_gt_annotations[0], 101, uuid_str, 0, {"propagate": True,})
+			self.temp_boxes['boxes'].append(box)
+			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+						  box['confidence'], self.color_map[box['annotation']]]
+			self.boxes_to_render.append(render_box)
+		else:
+			# uuid_str = str(uuid.uuid4())
+			uuid_str = secrets.token_hex(16)
+			box = self.create_box_metadata(box_to_rotate.center, size_flipped, result.elements, self.all_pred_annotations[0], 101,
+				  						   uuid_str, 0, {"propagate": True,})
+			self.temp_pred_boxes['boxes'].append(box)
+			render_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+						  box['confidence'], self.pred_color_map[box['annotation']]]
+			self.boxes_to_render.append(render_box)
+
+		self.tracking_id_set.text_value = uuid_str
 		self.scene_widget.scene.add_geometry(bbox_name, bounding_box, self.line_mat) #Adds the box to the scene
 		self.scene_widget.scene.add_geometry(volume_name, volume_to_add, self.transparent_mat)#Adds the volume
 		self.box_selected = bbox_name
 
+		# might cause an error in Windows OS
 		self.point_cloud.post_redraw()
 		self.cw.post_redraw()
 		self.box_count += 1
@@ -381,10 +522,11 @@ class Annotation:
 		elif event.is_modifier_down(gui.KeyModifier.SHIFT) and self.previous_index != -1:
 			current_box = self.previous_index
 			scene_camera = self.scene_widget.scene.camera
-			box_to_drag = self.boxes_in_scene[current_box]
-			box_name = self.box_indices[current_box]
 			volume_to_drag = self.volumes_in_scene[current_box]
 			volume_name = self.volume_indices[current_box]
+			box_to_drag = self.boxes_in_scene[current_box]
+			box_name = self.box_indices[current_box]
+			
 
 			#otherwise it's the drag part of the event, continually translate current box by the difference between
 			#start position and current position, multiply by scaling factor due to size of grid
@@ -486,9 +628,15 @@ class Annotation:
 			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
 			self.scene_widget.scene.show_geometry(self.coord_frame, False)
 
+		self.box_trajectory_checkbox.checked = False
+		self.box_trajectory_checkbox.enabled = False
+		self.tracking_id_set.text_value = ""
+		self.show_trajectory(False)
 		self.point_cloud.post_redraw()
+		self.update_boxes_to_render()
 
 		self.previous_index = -1
+		self.current_confidence = 0
 		self.box_selected = None
 		self.update_props()
 		self.update_poses()
@@ -498,16 +646,30 @@ class Annotation:
 	#it also moves the coordinate frame to the selected box
 	def select_box(self, box_index):
 		if self.previous_index != -1:  # if not first box clicked "deselect" previous box
-			self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
+			self.deselect_box()
+			# self.scene_widget.scene.modify_geometry_material(self.box_indices[self.previous_index], self.line_mat)
 
 		rendering.Open3DScene.remove_geometry(self.scene_widget.scene, self.coord_frame)
 		self.previous_index = box_index
+		self.current_confidence = self.temp_pred_boxes["boxes"][box_index]["confidence"]
+		self.tracking_id_set.enabled = True
+		if self.show_gt:
+			try:
+				self.tracking_id_set.text_value = self.temp_boxes["boxes"][box_index]["id"]
+			except KeyError:
+				self.tracking_id_set.text_value = "No ID"
+		else:
+			try:
+				self.tracking_id_set.text_value = self.temp_pred_boxes["boxes"][box_index]["id"]
+			except KeyError:
+				self.tracking_id_set.text_value = "No ID"
 		box = self.box_indices[box_index]
 		origin = o3d.geometry.TriangleMesh.get_center(self.volumes_in_scene[box_index])
 		frame = o3d.geometry.TriangleMesh.create_coordinate_frame(2.0, origin)
 		rendering.Open3DScene.modify_geometry_material(self.scene_widget.scene, box, self.line_mat_highlight)
 		self.scene_widget.scene.add_geometry("coord_frame", frame, self.coord_frame_mat, True)
 		self.scene_widget.force_redraw()
+		self.box_trajectory_checkbox.enabled = True
 		self.update_props()
 		self.update_poses()
 
@@ -536,7 +698,7 @@ class Annotation:
 	def update_props(self):
 		# Enables or disables boxes, depending on whether box is currently selected
 		boxes = [self.annotation_class, self.trans_x, self.trans_y, self.trans_z, self.rot_x, self.rot_y, self.rot_z, self.scale_x, self.scale_y,
-			self.scale_z, self.delete_annotation_button]
+			self.scale_z, self.delete_annotation_button, self.confidence_set]
 		enabled = False
 		if self.box_selected is not None:
 			enabled = True
@@ -550,6 +712,21 @@ class Annotation:
 				boxes[i].double_value = 0
 			self.cw.post_redraw()
 			return -1
+		
+		if self.show_pred:
+			if self.box_selected is not None:
+				self.confidence_set.enabled = True
+				self.box_trajectory_checkbox.enabled = False
+			else:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = False
+		else:
+			if self.box_selected is not None:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = True
+			else:
+				self.confidence_set.enabled = False
+				self.box_trajectory_checkbox.enabled = False
 
 		annot_type = gui.Horiz()
 		annot_type.add_child(gui.Label("Type:"))
@@ -564,7 +741,7 @@ class Annotation:
 		box_object = self.boxes_in_scene[current_box]
 
 		scaled_color = tuple(255*x for x in box_object.color)
-		if scaled_color in self.color_map.values():
+		if self.show_gt:
 			self.annotation_type.text = "Ground Truth"
 			selected = list(self.color_map.keys())[list(self.color_map.values()).index(scaled_color)]
 			if self.annotation_class.get_item(0) != selected:
@@ -573,7 +750,7 @@ class Annotation:
 				for annotation in self.color_map:
 					if annotation != selected:
 						self.annotation_class.add_item(annotation)
-		elif scaled_color in self.pred_color_map.values():
+		elif self.show_pred:
 			self.annotation_type.text = "Prediction"
 			selected = list(self.pred_color_map.keys())[list(self.pred_color_map.values()).index(scaled_color)]
 			if self.annotation_class.get_item(0) != selected:
@@ -615,9 +792,32 @@ class Annotation:
 		box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
 		result = Quaternion(matrix=box_to_rotate.R)
 		size = [box_scale[1], box_scale[0], box_scale[2]] #flip the x and y scale back
-		current_temp_box = self.temp_boxes["boxes"][self.previous_index]
-		updated_box_metadata = self.create_box_metadata(box_to_rotate.center, size, result.elements, current_temp_box["annotation"], current_temp_box["confidence"], "", 0, {})
-		self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
+		if self.show_gt:
+			current_temp_box = self.temp_boxes["boxes"][self.previous_index]
+			updated_box_metadata = self.create_box_metadata(
+				box_to_rotate.center,
+				size,
+				result.elements,
+				current_temp_box["annotation"],
+				current_temp_box["confidence"],
+				current_temp_box["id"],
+				current_temp_box["internal_pts"],
+				current_temp_box["data"]
+			)
+			self.temp_boxes['boxes'][self.previous_index] = updated_box_metadata
+		else:
+			current_temp_box = self.temp_pred_boxes["boxes"][self.previous_index]
+			updated_box_metadata = self.create_box_metadata(
+				box_to_rotate.center,
+				size,
+				result.elements,
+				current_temp_box["annotation"],
+				current_temp_box["confidence"],
+				"",
+				0,
+				current_temp_box["data"]
+			)
+			self.temp_pred_boxes['boxes'][self.previous_index] = updated_box_metadata		
 		self.cw.post_redraw()
 
 	#redirects on_value_changed events to appropriate box transformation function
@@ -636,16 +836,22 @@ class Annotation:
 
 	# on label change, changes temp_boxes value and color of current box
 	def label_change_handler(self, label, pos):
-		self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
+		if self.show_gt:
+			self.temp_boxes["boxes"][self.previous_index]["annotation"] = label
+		else:
+			self.temp_pred_boxes["boxes"][self.previous_index]["annotation"] = label
 		current_box = self.boxes_in_scene[self.previous_index]
 		box_name = self.box_indices[self.previous_index]
-		box_data = self.temp_boxes["boxes"][self.previous_index]
+		if self.show_gt:
+			box_data = self.temp_boxes["boxes"][self.previous_index]
+		else:
+			box_data = self.temp_pred_boxes["boxes"][self.previous_index]
 		self.scene_widget.scene.remove_geometry(box_name)
 
 		# changes color of box based on label selection
 		new_color = None
 		if label in self.color_map and box_data["confidence"] == 101:
-			new_color = self.pred_color_map[label]
+			new_color = self.color_map[label]
 		elif label in self.pred_color_map:
 			new_color = self.pred_color_map[label]
 
@@ -797,7 +1003,19 @@ class Annotation:
 			size = size.tolist()
 		if isinstance(rotation, np.ndarray):
 			rotation = rotation.tolist()
-		
+
+		if self.show_pred:
+			return {
+				"origin": origin,
+				"size": size,
+				"rotation": rotation,
+				"annotation": label,
+				"confidence": confidence,
+				"id": ids,
+				"data": data
+				# TODO: Handle original IDs : No IDs in original pred data
+			}
+
 		return {
 			"origin": origin,
 			"size": size,
@@ -839,15 +1057,16 @@ class Annotation:
 		# Extract new image from file
 		self.image = np.asarray(Image.open(self.image_path))
 
-		for b in self.temp_boxes["boxes"]:
-			box = Box(b["origin"], b["size"], Quaternion(b["rotation"]), name=b["annotation"], score=b["confidence"],
+		for b in self.boxes_to_render:
+			box = Box(b[0], b[1], Quaternion(b[2]), name=b[3], score=b[4],
 					  velocity=(0, 0, 0))
-			color = self.pred_color_map[b["annotation"]]
+			color = b[5]
+			
 
 			# Box is stored in vehicle frame, so transform it to RGB sensor frame
 			box.translate(-np.array(self.image_extrinsic['translation']))
 			box.rotate(Quaternion(self.image_extrinsic['rotation']).inverse)
-			curr_index = self.temp_boxes["boxes"].index(b)
+			curr_index = self.boxes_to_render.index(b)
 			line_weight = 2
 			# Thank you to Oscar Beijbom for providing this box rendering algorithm at https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/data_classes.py
 			if box_in_image(box, np.asarray(self.image_intrinsic['matrix']), (self.image_w, self.image_h),
@@ -870,16 +1089,29 @@ class Annotation:
 								 c, line_weight)
 						prev = corner
 
+				# if b["confidence"] >= 100: # If the box is a ground truth box
 				# Draw the sides
 				for i in range(4):
 					cv2.line(self.image,
-							 (int(corners.T[i][0]), int(corners.T[i][1])),
-							 (int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
-							 color, line_weight)
+							(int(corners.T[i][0]), int(corners.T[i][1])),
+							(int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+							color, line_weight)
 
 				# Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
 				draw_rect(corners.T[:4], color)
 				draw_rect(corners.T[4:], color)
+				
+				# else: # If the box is a predicted box
+				# 	# Draw the sides
+				# 	for i in range(4):
+				# 		cv2.line(self.image,
+				# 				(int(corners.T[i][0]), int(corners.T[i][1])),
+				# 				(int(corners.T[i + 4][0]), int(corners.T[i + 4][1])),
+				# 				pred_color, line_weight)
+						
+				# 	# Draw front (first 4 corners) and rear (last 4 corners) rectangles(3d)/lines(2d)
+				# 	draw_rect(corners.T[:4], pred_color)
+				# 	draw_rect(corners.T[4:], pred_color)
 
 				# Draw line indicating the front
 				center_bottom_forward = np.mean(corners.T[2:4], axis=0)
@@ -889,10 +1121,10 @@ class Annotation:
 						 (int(center_bottom_forward[0]), int(center_bottom_forward[1])),
 						 color, line_weight)
 
-				# Only render confidence if this isnt at GT box
-				if b["confidence"] < 100 and self.show_score:
-					cv2.putText(self.image, str(b["confidence"]), (int(corners.T[0][0]), int(corners.T[1][1])),
-								cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+				# might be useful later -- Only render confidence if this isnt at GT box
+				# if b["confidence"] < 100 and self.show_score:
+				# 	cv2.putText(self.image, str(b["confidence"]), (int(corners.T[0][0]), int(corners.T[1][1])),
+				# 				cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
 		new_image = o3d.geometry.Image(self.image)
 		self.image_widget.update_image(new_image)
@@ -958,6 +1190,83 @@ class Annotation:
 		self.image_path = os.path.join(self.lct_path, "cameras", self.rgb_sensor_name, str(self.frame_num) + ".jpg")
 		self.update_poses()
 
+	def on_frame_switch(self, new_val):
+		"""This updates the frame number of the window based on user input and then updates the window
+           Validates that the new frame number is valid (within range of frame nums) 
+            Args:
+                self: window object
+                new_val: new fram number
+            Returns:
+                None
+                """
+		if int(new_val) >= 0 and int(new_val) < self.num_frames:
+            # Set new frame value
+			self.frame_num = int(new_val)
+			self.frame_select.set_value(self.frame_num)
+			self.deselect_box()
+            # Update Bounding Box List
+			self.update()
+	
+	def on_confidence_switch(self, new_val):
+		"""This updates the minimum confidence after the user changed it.
+			New value must be between 0 and 101 inclusive 
+			Updates the window afterwards
+			Args:
+				self: window object
+				new_val: new value of min confidence
+			Returns:
+				None
+				"""
+		if int(new_val) >= 0 and int(new_val) <= 101:
+			self.min_confidence = int(new_val)
+			self.update()
+	
+	def confidence_set_handler(self, bool_value):
+		current_box = self.previous_index
+		if self.show_gt:
+			return
+		if current_box == -1:
+			return
+		if self.temp_pred_boxes["boxes"][current_box]["confidence"] != 101:
+			self.temp_pred_boxes["boxes"][current_box]["confidence"] = 101
+		else:
+			self.temp_pred_boxes["boxes"][current_box]["confidence"] = self.current_confidence
+		
+
+
+	def toggle_bounding(self, new_val, new_idx):
+		"""This updates the bounding box on the window to reflect either bounding or predicted bounding
+			Then updates the window to reflect changes 
+			Args:
+				self: window object
+				new_val: the new value of the box
+				new_idx: 
+			Returns:
+				None
+				"""
+		# switch to predicted boxes
+		# if not (self.show_pred and self.show_gt):
+		if new_val == "Predicted" and self.pred_frames > 0:
+			self.show_pred = True
+			self.show_gt = False
+			self.previous_index = -1
+			self.update()
+		else: # switched to ground truth boxes
+			self.show_pred = False
+			self.show_gt = True
+			self.previous_index = -1
+			self.update()
+	
+	def jump_to_vehicle(self):
+		bounds = self.scene_widget.scene.bounding_box
+		self.scene_widget.setup_camera(10, bounds, self.frame_extrinsic['translation'])
+		eye = [0,0,0]
+		eye[0] = self.frame_extrinsic['translation'][0]
+		eye[1] = self.frame_extrinsic['translation'][1]
+		eye[2] = 150.0
+		self.scene_widget.scene.camera.look_at(self.frame_extrinsic['translation'], eye, [1, 0, 0])
+		self.update()
+
 	# deletes the currently selected annotation as well as all its associated data, else nothing happens
 	def delete_annotation(self):
 		if self.box_selected:
@@ -965,7 +1274,10 @@ class Annotation:
 			box_name = self.box_indices[current_box]
 			volume_name = self.volume_indices[current_box]
 
-			self.temp_boxes["boxes"].pop(current_box)
+			if self.show_gt:
+				self.temp_boxes["boxes"].pop(current_box)
+			else:
+				self.temp_pred_boxes["boxes"].pop(current_box)
 			self.box_indices.pop(current_box)
 			self.volume_indices.pop(current_box)
 			self.boxes_in_scene.pop(current_box)
@@ -978,6 +1290,7 @@ class Annotation:
 			
 			self.previous_index = -1
 			self.box_selected = None
+			self.update_boxes_to_render()
 			self.update_props()
 			self.update_poses()
 
@@ -1031,11 +1344,22 @@ class Annotation:
 		self.cw.close_dialog()
 
 	# overwrites currently open file with temp_boxes
-	def save_changes_to_json(self, path):
+	def save_changes_to_json(self):
 		self.save_check = 1
 		self.cw.close_dialog()
+		# check current annotation type and save to appropriate folder
+		for box in self.temp_boxes["boxes"]:
+			box["data"]["propagate"] = False
+		for box in self.temp_pred_boxes["boxes"]:
+			box["data"]["propagate"] = False
+		if self.show_gt and not self.show_pred:
+			path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+			boxes_to_save = {"boxes": [box for box in self.temp_boxes["boxes"]]}
+		elif self.show_pred and not self.show_gt:
+			path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
+			boxes_to_save = {"boxes": [box for box in self.temp_pred_boxes["boxes"]]}
 		with open(path, "w") as outfile:
-			outfile.write(json.dumps(self.temp_boxes))
+			outfile.write(json.dumps(boxes_to_save))
 
 	def save_as(self):
 		# opens a file browser to let user select place to save
@@ -1044,6 +1368,256 @@ class Annotation:
 		file_dialog.set_on_cancel(self.cw.close_dialog)
 		file_dialog.set_on_done(self.save_changes_to_json)
 		self.cw.show_dialog(file_dialog)
+
+	def save_and_propagate(self):
+		# propagates changes to the next frame
+		old_gt_boxes_path = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
+		old_pred_boxes_path = os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")
+
+		old_pred_boxes = json.load(open(old_pred_boxes_path))
+		old_gt_boxes = json.load(open(old_gt_boxes_path))
+
+		new_gt_boxes = [box for box in self.temp_boxes["boxes"] if (box not in old_gt_boxes["boxes"] and box["data"]["propagate"]==True)]
+		new_pred_boxes = [box for box in self.temp_pred_boxes["boxes"] if (box not in old_pred_boxes["boxes"] and box["data"]["propagate"]==True)]
+
+		prev_gt_boxes = [box for box in old_gt_boxes["boxes"] if box not in self.temp_boxes["boxes"]]
+		prev_pred_boxes = [box for box in old_pred_boxes["boxes"] if box not in self.temp_pred_boxes["boxes"]]
+
+
+		self.save_changes_to_json()
+
+		for box in new_gt_boxes:
+			box["data"]["propagate"] = True
+		for box in new_pred_boxes:
+			box["data"]["propagate"] = True
+
+		global_new_gt_boxes = []
+
+		# Transform boxes to global frame
+		for box in new_gt_boxes:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			
+			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
+												  box["confidence"], box["id"], box["internal_pts"], box["data"])
+
+			global_new_gt_boxes.append(global_box)
+		
+		global_new_pred_boxes = []
+
+		# Transform boxes to global frame
+		for box in new_pred_boxes:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			
+			global_box = self.create_box_metadata(bounding_box.get_center(), size, Quaternion(matrix=bounding_box.R).elements, box["annotation"],
+												  box["confidence"], "", 0, box["data"])
+
+			global_new_pred_boxes.append(global_box)
+
+		# get ego data for next frame
+		next_frame_num = self.frame_num + 1
+		next_frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(next_frame_num) + ".json")))
+
+		# Transform boxes to ego coordinate frame of the next frame
+		for box in global_new_gt_boxes:
+			size = [0,0,0]
+			# switch sizes back
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			try:
+				velocity = box["data"]["velocity"]
+			except KeyError:
+				velocity = [0,0,0]
+
+			if self.source_format == "nuScenes":
+				delta_time = 0.5 # TODO: add other datasets
+
+			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(projected_origin, Quaternion(box["rotation"]).rotation_matrix, size)
+
+			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box) #copy box object to do transforms on
+			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
+			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
+			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+			result = Quaternion(matrix=box_to_rotate.R)
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], box["id"],
+				      						   box["internal_pts"], box["data"])
+			
+			ego_box['data']['prev_origin'] = box["origin"] # stores the current origin in the global frame
+			
+			self.propagated_gt_boxes.append(ego_box)
+		
+		for box in global_new_pred_boxes:
+			size = [0,0,0]
+			# switch sizes back
+			size[0] = box["size"][1]
+			size[1] = box["size"][0]
+			size[2] = box["size"][2]
+
+			try:
+				velocity = box["data"]["velocity"]
+			except KeyError:
+				velocity = [0,0,0]
+
+			if self.source_format == "nuScenes":
+				delta_time = 0.5 # TODO: add other datasets
+
+			projected_origin = [velocity[i] * delta_time + box["origin"][i] for i in range(3)]
+
+			bounding_box = o3d.geometry.OrientedBoundingBox(projected_origin, Quaternion(box["rotation"]).rotation_matrix, size)
+
+			box_to_rotate = o3d.geometry.OrientedBoundingBox(bounding_box)
+			reverse_extrinsic = Quaternion(next_frame_extrinsic['rotation']).inverse
+			box_to_rotate.translate(-np.array(next_frame_extrinsic['translation']))
+			box_to_rotate = box_to_rotate.rotate(reverse_extrinsic.rotation_matrix, [0,0,0])
+			result = Quaternion(matrix=box_to_rotate.R)
+			ego_box = self.create_box_metadata(box_to_rotate.center, size, result.elements, box["annotation"], box["confidence"], "", 0, box["data"])
+			ego_box['data']['prev_origin'] = box['origin'] # stores the previous origin in the global frame
+			
+			self.propagated_pred_boxes.append(ego_box)
+
+
+		new_val = self.frame_num + 1
+		self.on_frame_switch(new_val)
+
+	def set_velocity(self):
+		# set the velocity based on the difference in coordinates between the current and previous frame
+		current_id = self.previous_index
+		if current_id == -1:
+			return
+		
+		if self.show_gt:
+			current_box = self.temp_boxes["boxes"][current_id]
+		else:
+			current_box = self.temp_pred_boxes["boxes"][current_id]
+
+		try: 
+			if current_box["data"]["prev_origin"] == None:
+				return
+			
+		except KeyError:
+			print("ERROR: no prev origin")
+			return
+
+		prev_global_origin = current_box["data"]["prev_origin"]
+		# convert current origin to global frame
+		size = [0,0,0]
+		# Open3D wants sizes in L,W,H
+		size[0] = current_box["size"][1]
+		size[1] = current_box["size"][0]
+		size[2] = current_box["size"][2]
+		bounding_box = o3d.geometry.OrientedBoundingBox(current_box["origin"], Quaternion(current_box["rotation"]).rotation_matrix, size)
+		bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+
+		delta_pos = bounding_box.center - prev_global_origin
+		# assuming that the prev_origin is from the previous frame
+		
+		if self.source_format == "nuScenes":
+			delta_time = 0.5
+		# TODO: add other datasets
+
+		velocity = delta_pos / delta_time
+
+		current_box["data"]["velocity"] = velocity.tolist()
+		
+	def show_trajectory(self, bool_value):
+		# Load the annotations of this object from previous and next frames
+		if bool_value == False:
+			i = 0
+			while i < 8:
+				try:
+					rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'centroid' + str(i))
+					i += 1
+					if i != 0:
+						rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'segment' + str(i))
+				except:
+					break
+			# remove the refernce line
+			rendering.Open3DScene.remove_geometry(self.scene_widget.scene, 'reference')
+			return
+
+		current_index = self.previous_index
+		if current_index == -1:
+			return
+		
+		if self.show_gt:
+			current_box = self.temp_boxes["boxes"][current_index]
+			object_id = current_box["id"]
+		# currently, id's for original pred boxes are not stored
+		else:
+			current_box = self.temp_pred_boxes["boxes"][current_index]
+			if "id" in current_box.keys() and current_box["id"] != None and current_box["id"] != "":
+				object_id = current_box["id"]
+			else:
+				return
+		centroid_global_origins = []
+
+		for i in range(-3, 4):
+			# Load the annotations of this object from previous and next frames
+			try:
+				boxes_i = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num + i), "boxes.json")))
+				extrinsics_i = json.load(open(os.path.join(self.lct_path, "ego", str(self.frame_num + i) + ".json")))
+			except FileNotFoundError:
+				continue
+
+			for box in boxes_i["boxes"]:
+				if box["id"] == object_id:
+					# convert current origin to global frame
+					size = [0,0,0]
+					# Open3D wants sizes in L,W,H
+					size[0] = box["size"][1]
+					size[1] = box["size"][0]
+					size[2] = box["size"][2]
+					bounding_box = o3d.geometry.OrientedBoundingBox(box["origin"], Quaternion(box["rotation"]).rotation_matrix, size)
+					bounding_box.rotate(Quaternion(extrinsics_i['rotation']).rotation_matrix, [0,0,0])
+					bounding_box.translate(np.array(extrinsics_i['translation']))
+					centroid_global_origins.append(bounding_box.center)
+					break
+
+		for i in range(len(centroid_global_origins)):
+			centroid_fig = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+			centroid_fig.paint_uniform_color([1, 0, 1])
+			centroid_fig.translate(centroid_global_origins[i])
+			centroid_mat = rendering.MaterialRecord()
+			if i != 0:
+				segment_fig = o3d.geometry.LineSet()
+				segment_fig.points = o3d.utility.Vector3dVector([centroid_global_origins[i-1], centroid_global_origins[i]])
+				segment_fig.lines =  o3d.utility.Vector2iVector([[0,1]])
+				segment_fig.colors = o3d.utility.Vector3dVector([[1, 0, 1]])
+				segment_mat = rendering.MaterialRecord()
+				segment_mat.shader = "unlitLine"
+				segment_mat.line_width = 0.5
+				self.scene_widget.scene.add_geometry('segment' + str(i), segment_fig, segment_mat)
+			self.scene_widget.scene.add_geometry('centroid' + str(i), centroid_fig, centroid_mat)
+
+		final_fig = o3d.geometry.LineSet()
+		final_fig.points = o3d.utility.Vector3dVector([centroid_global_origins[0], centroid_global_origins[-1]])
+		final_fig.lines =  o3d.utility.Vector2iVector([[0,1]])
+		final_fig.colors = o3d.utility.Vector3dVector([[1, 1, 1]])
+		final_mat = rendering.MaterialRecord()
+		final_mat.shader = "unlitLine"
+		final_mat.line_width = 0.5
+		# the reference line connecting the first and last centroids
+		self.scene_widget.scene.add_geometry('reference', final_fig, final_mat)
 
 	# restarts the program in order to exit
 	def exit_annotation_mode(self):
@@ -1073,7 +1647,7 @@ class Annotation:
 
 	def confirm_exit(self):
 		# point_cloud.close() must be after Window() in order to work, cw.close doesn't matter
-		Window(sys.argv[2])
+		Window(sys.argv[2], self.frame_num)
 		self.point_cloud.close()
 		self.image_window.close()
 		self.cw.close()
@@ -1081,4 +1655,194 @@ class Annotation:
 	# getters and setters below
 	def getCw(self):
 		return self.cw
+	
+	def update_pcd_path(self):
+		"""This clears the current pcd_paths stored and updates it with the sensors currently stored in lidar_sensors
+            Args:
+                self: window object
+            Returns:
+                None
+                """
+		self.pcd_paths.clear()
+		for sensor in self.lidar_sensors:
+			self.pcd_paths.append(os.path.join(self.lct_path, "pointcloud", sensor, str(self.frame_num) + ".pcd"))
+
+	def update_pointcloud(self):
+		"""Takes new pointcloud data and converts it to global frame, 
+			then renders the bounding boxes (Assuming the boxes are vehicle frame
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+		self.scene_widget.scene.clear_geometry()
+		self.boxes_in_scene = []
+		self.box_indices = []
+		self.volumes_in_scene = []
+		self.volume_indices = []
+		# Add Pointcloud
+		temp_points = np.empty((0,3))
+		for label in self.label_list:
+			self.scene_widget.remove_3d_label(label)
+
+		self.label_list = []
+
+		for i, pcd_path in enumerate(self.pcd_paths):
+			temp_cloud = o3d.io.read_point_cloud(pcd_path)
+			ego_rotation_matrix = Quaternion(self.frame_extrinsic['rotation']).rotation_matrix
+
+			# Transform lidar points into global frame
+			temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
+			temp_cloud.translate(np.array(self.frame_extrinsic['translation']))
+			temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
+
+		self.pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
+		# Add new global frame pointcloud to our 3D widget
+		self.scene_widget.scene.add_geometry("Point Cloud", self.pointcloud, self.pcd_mat)
+		self.scene_widget.scene.show_axes(True)
+		i = 0
+		mat = rendering.MaterialRecord()
+		mat.shader = "unlitLine"
+		mat.line_width = .25
+
+		for box in self.boxes_to_render:
+			size = [0,0,0]
+			# Open3D wants sizes in L,W,H
+			size[0] = box[SIZE][1]
+			size[1] = box[SIZE][0]
+			size[2] = box[SIZE][2]
+			color = box[COLOR]
+			bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
+			bounding_box.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+			bounding_box.translate(np.array(self.frame_extrinsic['translation']))
+			hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+			bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+			self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
+			self.boxes_in_scene.append(bounding_box)
+
+			# if box[CONFIDENCE] < 100 and self.show_score:
+			# 	label = self.scene_widget.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
+			# 	label.color = gui.Color(1.0,0.0,0.0)
+			# 	self.label_list.append(label)
+
+			self.scene_widget.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
+			i += 1
+
+		# update volumes in the scene
+		self.create_box_scene(self.scene_widget, self.boxes_to_render, self.frame_extrinsic)
+
+
+		#Add Line that indicates current RGB Camera View
+		line = o3d.geometry.LineSet()
+		line.points = o3d.utility.Vector3dVector([[0,0,0], [0,0,2]])
+		line.lines =  o3d.utility.Vector2iVector([[0,1]])
+		line.colors = o3d.utility.Vector3dVector([[1.0,0,0]])
+
+
+		line.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		line.translate(self.image_extrinsic['translation'])
+
+
+		line.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+		line.translate(self.frame_extrinsic['translation'])
+
+
+		self.scene_widget.scene.add_geometry("RGB Line",line, mat)
+
+
+		# Force our widgets to update
+		self.scene_widget.force_redraw()
+		#Post Redraw calls seem to crash the app on windows. Temporary workaround
+		if OS_STRING != "Windows":
+			self.point_cloud.post_redraw()
+	
+	def update_bounding(self):
+		"""Updates bounding box information when switching frames
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+
+		#Array that will hold list of boxes that will eventually be rendered
+		self.boxes_to_render = []
+
+		#
+		self.boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(self.frame_num), "boxes.json")))
+		self.temp_boxes = self.boxes.copy()
+		self.temp_boxes["boxes"].extend(self.propagated_gt_boxes)
+		self.pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(self.frame_num), "boxes.json")))
+		self.temp_pred_boxes = self.pred_boxes.copy()
+		self.temp_pred_boxes["boxes"].extend(self.propagated_pred_boxes)
+
+		self.propagated_gt_boxes = [] #reset propagated boxes
+		self.propagated_pred_boxes = []
+		
+		# #If highlight_faults is False, then we just filter boxes
+		
+		# #If checked, add GT Boxes we should render
+		if self.show_gt is True:
+			for box in self.boxes['boxes']:
+				if box['confidence'] >= self.min_confidence:
+					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+									box['confidence'], self.color_map[box['annotation']]]
+					self.boxes_to_render.append(bounding_box)
+
+		#Add Pred Boxes we should render
+		if self.show_pred is True:
+			if self.pred_frames > 0:
+				for box in self.pred_boxes['boxes']:
+					if box['confidence'] >= self.min_confidence:
+						bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
+						self.boxes_to_render.append(bounding_box)
+
+
+		#Post Redraw calls seem to crash the app on windows. Temporary workaround
+		if OS_STRING != "Windows":
+			self.cw.post_redraw()
+
+	def update_boxes_to_render(self):
+		"""Updates bounding box information when adding/removing boxes (for RGB image)
+			Args:
+				self: window object
+			Returns:
+				None
+				"""
+		#Array that will hold list of boxes that will eventually be rendered
+		self.boxes_to_render = []
+
+		# #If checked, add GT Boxes we should render
+		if self.show_gt is True:
+			for box in self.temp_boxes['boxes']:
+				if box['confidence'] >= self.min_confidence:
+					bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+									box['confidence'], self.color_map[box['annotation']]]
+					self.boxes_to_render.append(bounding_box)
+
+		#Add Pred Boxes we should render
+		if self.show_pred is True:
+			if self.pred_frames > 0:
+				for box in self.temp_pred_boxes['boxes']:
+					if box['confidence'] >= self.min_confidence:
+						bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'], box['confidence'], self.pred_color_map[box['annotation']]]
+						self.boxes_to_render.append(bounding_box)
+
+		
+
+	def update(self):
+		""" This updates the window object to reflect the current state
+        Args:
+            self: window object
+        Returns:
+            None
+            """
+		# print("boxes in scene:", self.boxes_in_scene)
+		# print("boxes to render:", self.boxes_to_render)
+		# print("temp boxes:", self.temp_boxes)
+		# print("temp pred boxes:", self.temp_pred_boxes)
+		self.update_pcd_path()
+		self.update_bounding()
+		self.update_image_path()
+		self.update_pointcloud()
 

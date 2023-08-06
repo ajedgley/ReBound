@@ -191,9 +191,10 @@ def create_frame_bounding_directory(path, frame_num, origins, sizes, rotations, 
         box['rotation'] = rotations[i]
         box['annotation'] = annotation_names[i]
         box['confidence'] = confidences[i]
-        box['id'] = ids[i]
-        box['internal_pts'] = internal_points[i]
-        box['data'] = {}
+        if not predicted:
+            box['id'] = ids[i]
+            box['internal_pts'] = internal_points[i]
+        box['data'] = {'propagate': False}
         if data:
             for k in data.keys():
                 box['data'][k] = data[k][i]

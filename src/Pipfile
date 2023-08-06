@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-open3d = "==0.13.0"
+open3d = "==0.14.1"
 numpy = "==1.22.2"
 nuscenes-devkit = "==1.1.9"
 matplotlib = "==3.5.1"

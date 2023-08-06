@@ -73,7 +73,7 @@ def parse_options():
 
 class Window:
     MENU_IMPORT = 1
-    def __init__(self, lct_dir):
+    def __init__(self, lct_dir, frame_num=0):
         np.set_printoptions(precision=15)
 
         # Create the objects for the 3 windows that appear when running the application
@@ -125,12 +125,12 @@ class Window:
         # image widget used to draw an image onto our image window
         self.image_widget = gui.ImageWidget()
 
-        self.frame_num = 0
+        self.frame_num = frame_num
         # dictionary that stores the imported JSON file that respresents the annotations in the current frame
         self.path_string = os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")
         self.boxes = json.load(open(self.path_string))
         # num of frames available to display
-        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding"))]
+        frames_available = [entry for entry in os.scandir(os.path.join(self.lct_path, "bounding")) if entry.name != ".DS_Store"] # ignore .DS_Store (MacOS)
         self.num_frames = len(frames_available)
         # List to store bounding boxes as NuScenes Box Objects
         self.n_boxes = []
@@ -202,7 +202,7 @@ class Window:
         self.pred_check_horiz = []
         self.all_pred_annotations = []
         for i in range(0, self.pred_frames):
-            boxes = json.load(open(os.path.join(self.lct_path,"bounding", str(i), "boxes.json")))
+            boxes = json.load(open(os.path.join(self.lct_path,"pred_bounding", str(i), "boxes.json")))
             for box in boxes['boxes']:
                 if box['annotation'] not in self.pred_color_map:
                     self.all_pred_annotations.append(box['annotation'])
@@ -221,7 +221,7 @@ class Window:
                     horiz.add_child(gui.Label("Count: 0"))
                     self.pred_check_horiz.append(horiz)
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
 
         # Horizontal widget where we will insert our drop down menu
         sensor_switch_layout = gui.Horiz()
@@ -244,6 +244,7 @@ class Window:
         # Set up a widget to switch between frames
         self.frame_select = gui.NumberEdit(gui.NumberEdit.INT)
         self.frame_select.set_limits(0, self.num_frames)
+        self.frame_select.set_value(self.frame_num)
         self.frame_select.set_on_value_changed(self.on_frame_switch)
 
         # Add a frame switching widget to another horizontal widget
@@ -317,6 +318,7 @@ class Window:
         file_menu = gui.Menu()
         file_menu.add_item("Export Current RGB Image...", 0)
         file_menu.add_item("Export Current PointCloud...", 1)
+        file_menu.add_item("Export PointCloud Video of the Scene...", 5)
         file_menu.add_separator()
         file_menu.add_item("Quit", 2)
 
@@ -375,6 +377,7 @@ class Window:
         cw.set_on_menu_item_activated(2, self.on_menu_quit)
         cw.set_on_menu_item_activated(3, self.on_error_scan)
         cw.set_on_menu_item_activated(4, self.on_annotation_start)
+        cw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
 	
 
         iw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
@@ -383,6 +386,7 @@ class Window:
         # Originally read 'cw.set_on_menu...', I think it's a bug?
         iw.set_on_menu_item_activated(3, self.on_error_scan)
         iw.set_on_menu_item_activated(4, self.on_annotation_start)
+        iw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
 
 
         pw.set_on_menu_item_activated(0, self.on_menu_export_rgb)
@@ -391,6 +395,7 @@ class Window:
         # Originally read 'cw.set_on_menu...', I think it's a bug?
         pw.set_on_menu_item_activated(3, self.on_error_scan)
         pw.set_on_menu_item_activated(4, self.on_annotation_start)
+        pw.set_on_menu_item_activated(5, self.on_menu_export_video_lidar)
     
 
         # Call update function to draw all initial data
@@ -459,7 +464,7 @@ class Window:
                         color, 2)
 
                 #Only render confidence if this isnt at GT box        
-                if b[CONFIDENCE] < 100 and self.show_score:
+                if b[CONFIDENCE] <= 100 and self.show_score:
                     cv2.putText(self.image, str(b[CONFIDENCE]), (int(corners.T[0][0]), int(corners.T[1][1])), cv2.FONT_HERSHEY_SIMPLEX ,1, (255,0,0), 2)
 
         new_image = o3d.geometry.Image(self.image)
@@ -497,7 +502,7 @@ class Window:
             count_widget.text = "Count: " + str(count_num)
         
         if self.pred_frames > 0:
-            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"bounding", str(self.frame_num), "boxes.json")))
+            self.pred_boxes = json.load(open(os.path.join(self.lct_path ,"pred_bounding", str(self.frame_num), "boxes.json")))
             #Update the counters for predicted boxes
             for horiz_widget in self.pred_check_horiz:
                 children = horiz_widget.get_children()
@@ -640,7 +645,7 @@ class Window:
 
             self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
             self.boxes_in_scene.append(bounding_box)
-            if box[CONFIDENCE] < 100 and self.show_score:
+            if box[CONFIDENCE] <= 100 and self.show_score:
                 label = self.widget3d.add_3d_label(bounding_box.center, str(box[CONFIDENCE]))
                 label.color = gui.Color(1.0,0.0,0.0)
                 self.label_list.append(label)
@@ -953,7 +958,144 @@ class Window:
         self.widget3d.scene.scene.render_to_image(on_image)
         self.update()
 
-    
+    def on_menu_export_video_lidar(self):
+        file_dialog = gui.FileDialog(gui.FileDialog.SAVE, "Choose file to save", self.controls.theme)
+        # file_dialog.add_filter(".mp4", "MP4 files (.mp4)")
+        file_dialog.set_on_cancel(self.on_file_dialog_cancel)
+        file_dialog.set_on_done(self.on_export_video_lidar_dialog_done)
+        self.controls.show_dialog(file_dialog)
+
+    def on_export_video_lidar_dialog_done(self, filename):
+        self.controls.close_dialog()
+        middle_frame = self.num_frames // 2
+        middle_extrinsics = json.load(open(os.path.join(self.lct_path, "ego", str(middle_frame) + ".json")))
+        eye = [0,0,0]
+        eye[0] = middle_extrinsics['translation'][0]
+        eye[1] = middle_extrinsics['translation'][1]
+        eye[2] = 75
+        image_folder = filename + '_temp'
+        os.mkdir(image_folder)
+        self.off_renderer = o3d.visualization.rendering.OffscreenRenderer(width=1600, height=1200)
+        for cur_frame in range(0, self.num_frames):
+            self.export_lidar_frame(filename, cur_frame, middle_extrinsics, eye)
+        
+        video_name = filename + '.mp4'
+        _fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        images = []
+        for cur_frame in range(0, self.num_frames):
+            images.append(f'{filename}_temp/{cur_frame:03d}.png')
+        frame = cv2.imread(os.path.join(image_folder, images[0]))
+        height, width, layers = frame.shape
+
+        if self.num_frames % 2 == 0:
+            video = cv2.VideoWriter(video_name, _fourcc, 2, (width, height))
+        elif self.num_frames % 3 == 0:
+            video = cv2.VideoWriter(video_name, _fourcc, 3, (width, height))
+        else:
+            video = cv2.VideoWriter(video_name, _fourcc, 1, (width, height))
+
+        for image in images:
+            video.write(cv2.imread(os.path.join(image_folder, image)))
+
+        cv2.destroyAllWindows()
+        video.release()
+
+        # remove all png files
+        for cur_frame in range(0, self.num_frames):
+            os.remove(filename + f'_temp/{cur_frame:03d}.png')
+
+        # remove temp folder
+        os.rmdir(filename + f'_temp/')
+
+        self.update()
+
+
+    def export_lidar_frame(self, filename, cur_frame, middle_extrinsics, eye):
+        # get extrinsics of current frame
+        cur_frame_extrinsic = json.load(open(os.path.join(self.lct_path, "ego", str(cur_frame) + ".json")))
+        self.off_renderer.scene.set_view_size(1600, 1200)
+        
+        paths_pcd = []
+        for sensor in self.lidar_sensors:
+            paths_pcd.append(os.path.join(self.lct_path, "pointcloud", sensor, str(cur_frame) + ".pcd"))
+        print(paths_pcd)
+        temp_points = np.empty((0,3))
+        # get pointcloud of current frame:
+        for i, path in enumerate(paths_pcd):
+            temp_cloud = o3d.io.read_point_cloud(path)
+            ego_rotation_matrix = Quaternion(cur_frame_extrinsic['rotation']).rotation_matrix
+            # Transform lidar points into global frame
+            print('here')
+            temp_cloud.rotate(ego_rotation_matrix, [0,0,0])
+            temp_cloud.translate(np.array(cur_frame_extrinsic['translation']))
+            temp_points = np.concatenate((temp_points, np.asarray(temp_cloud.points)))
+ 
+        pointcloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(temp_points)))
+        # Add new global frame pointcloud to our 3D widget
+        mat = rendering.MaterialRecord()
+        mat.shader = "defaultUnlit"
+        mat.point_size = 1.5
+        self.off_renderer.scene.add_geometry("Point Cloud", pointcloud, mat)
+
+        #Array that will hold list of boxes that will eventually be rendered
+        gt_boxes = []
+        
+        boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(cur_frame), "boxes.json")))
+        for box in boxes['boxes']:
+            bounding_box = [box['origin'], box['size'], box['rotation'], box['annotation'],
+                            box['confidence'], self.color_map[box['annotation']]]
+            gt_boxes.append(bounding_box)
+
+        i = 0
+        mat = rendering.MaterialRecord()
+        mat.shader = "unlitLine"
+        mat.line_width = 1.5
+
+        for box in gt_boxes:
+            size = [0,0,0]
+            # Open3D wants sizes in L,W,H
+            size[0] = box[SIZE][1]
+            size[1] = box[SIZE][0]
+            size[2] = box[SIZE][2]
+            color = box[COLOR]
+            bounding_box = o3d.geometry.OrientedBoundingBox(box[ORIGIN], Quaternion(box[ROTATION]).rotation_matrix, size)
+            bounding_box.rotate(Quaternion(cur_frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+            bounding_box.translate(np.array(cur_frame_extrinsic['translation']))
+            hex = '#%02x%02x%02x' % color # bounding_box.color needs to be a tuple of floats (color is a tuple of ints)
+            bounding_box.color = matplotlib.colors.to_rgb(hex)
+
+            self.box_indices.append(box[ANNOTATION] + str(i)) #used to reference specific boxes in scene
+            self.boxes_in_scene.append(bounding_box)
+
+            self.off_renderer.scene.add_geometry(box[ANNOTATION] + str(i), bounding_box, mat)
+            i += 1
+
+        #Add Line that indicates current RGB Camera View
+        line = o3d.geometry.LineSet()
+        line.points = o3d.utility.Vector3dVector([[0,0,0], [0,0,2]])
+        line.lines =  o3d.utility.Vector2iVector([[0,1]])
+        line.colors = o3d.utility.Vector3dVector([[1.0,0,0]])
+     
+        line.rotate(Quaternion(self.image_extrinsic['rotation']).rotation_matrix, [0,0,0])
+        line.translate(self.image_extrinsic['translation'])      
+        
+        line.rotate(Quaternion(self.frame_extrinsic['rotation']).rotation_matrix, [0,0,0])
+        line.translate(self.frame_extrinsic['translation'])
+        
+        self.off_renderer.scene.add_geometry("RGB Line",line, mat)
+
+        # off_renderer.scene.scene.update_geometry()
+        self.off_renderer.scene.set_background([0,0,0,255])
+        # Set camera position
+        self.off_renderer.scene.camera.look_at(middle_extrinsics['translation'], eye, [1, 0, 0])
+
+        rendered_image = o3d.geometry.Image()
+        rendered_image = self.off_renderer.render_to_image()
+        o3d.io.write_image(filename + f'_temp/{cur_frame:03d}.png', rendered_image)
+        
+        self.off_renderer.scene.clear_geometry()
+        print("Done exporting image", cur_frame)    
+
 
     def on_error_scan(self):
 
@@ -970,7 +1112,7 @@ class Window:
         for j in range(0, self.num_frames):
             boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
             try:
-                pred_boxes = json.load(open(os.path.join(self.lct_path , "bounding", str(j), "boxes.json")))
+                pred_boxes = json.load(open(os.path.join(self.lct_path , "pred_bounding", str(j), "boxes.json")))
             except FileNotFoundError:
                 layout.add_child(gui.Label("Error reading predicted data"))
                 window.add_child(layout)
@@ -1063,12 +1205,12 @@ class Window:
     
     # Sets program to annotation editing mode, see annotation_editing.py
     def on_annotation_start(self):
-    	self.controls.close()
-    	#self.image_window.close()
-    	annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes,
+        self.controls.close()
+        #self.image_window.close()
+        annotation_object = edit.Annotation(self.widget3d, self.pointcloud_window, self.frame_extrinsic, self.boxes, self.pred_boxes,
                                             self.boxes_to_render, self.boxes_in_scene, self.box_indices,
                                             self.all_pred_annotations, self.path_string, self.color_map, self.pred_color_map,
-                                            self.image_window, self.image_widget, self.lct_path, self.frame_num, self.camera_sensors)
+                                            self.image_window, self.image_widget, self.lct_path, self.frame_num, self.camera_sensors, self.lidar_sensors)
 
 
 
